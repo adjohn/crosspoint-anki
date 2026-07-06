@@ -8,8 +8,23 @@ This document provides comprehensive testing instructions for the Anki flashcard
 
 - Xteink X3 or X4 device with CrossPoint firmware 0.16.0+ (PR #679 app extension support)
 - A computer or phone with WiFi (deck uploads use a hotspot the device creates itself; a shared WiFi network is only needed if you install the app via CrossPoint File Transfer in STA mode)
-- Sample deck in JSONL format - see [Test Decks](#test-decks) below
+- A test deck: a real Anki `.apkg` export (for the browser upload) and/or the JSONL sample below (for the curl API) - see [Test Decks](#test-decks)
 - Battery > 20% (required for app installation)
+
+---
+
+## Automated Test Suites
+
+Run these on a computer (no device needed); both exit nonzero on failure.
+
+| Suite | Command | Coverage | Current status |
+|-------|---------|----------|----------------|
+| Native unit tests | `bash test/native/run.sh` | Real `SM2.cpp` interval/ease math, `TimeUtils` BCD + DS3231 register decoding + epoch-day conversion, `Card`/`Progress` JSON parsing and old-format migration (compiled host-side against an Arduino shim) | 3 targets, 191 checks passing (test_sm2 96, test_timeutils 29, test_card_json 66) |
+| Web upload E2E | `bash test/web/run.sh` | Builds a real `.apkg` fixture (plain, HTML+entities, unicode, reversed cards), drives `web/upload.html` in headless Chromium against a mock server implementing the firmware `/upload-deck` contract, asserts the UI states and the exact JSONL bytes received | 39 checks passing |
+
+Native suite needs `g++` plus the ArduinoJson dependency (`pio run` once in
+`firmware/` fetches it, otherwise the JSON target is skipped and counted as a
+failure). Web suite needs `python3`, `node`, and Playwright with Chromium.
 
 ---
 
@@ -30,17 +45,20 @@ The device stores decks in JSONL format (one card per line). Create a file
 
 You upload it with `curl` in Test 2 below.
 
-### Known Limitations (v0.1.0)
-- **Browser .apkg upload not wired yet**: the upload page loads and lets you
-  select an .apkg file, but its UPLOAD DECK button is a stub - uploads must
-  go through the HTTP API (`POST /upload-deck`) with a JSONL file for now
+### Known Limitations
 - **Max upload size**: 10MB
-- **Text only**: No images or audio
-- **English/Latin-1**: Unicode characters may not render correctly
-- **No cloze deletions**: Basic cards only
-- **No due-date scheduling**: every session reviews all cards in the deck;
-  SM-2 ease/interval/repetitions are tracked in the progress file but due
-  dates are not yet enforced
+- **Text only**: no images or audio; the browser upload strips HTML to plain
+  text and drops `[sound:...]` references
+- **Device fonts**: unicode uploads intact (verified by the web E2E suite)
+  but non-Latin glyphs may not render on the e-ink screen
+- **Cloze notes are approximated**: each Anki card row uploads with its raw
+  field text, not cloze-rendered text
+- **No same-session relearning**: a card rated Again is due tomorrow; it
+  does not repeat later in the same session (unlike desktop Anki)
+- **X4 due dates need the system clock**: the X4 has no RTC, so due-date
+  filtering only works while the ESP32 clock is set (CrossPoint NTP); with
+  no usable clock every session reviews all cards. The X3 uses its DS3231
+  RTC and keeps dates across power-off. See Test 5.
 
 ---
 
@@ -103,13 +121,18 @@ Download: `anki-v0.1.0.zip`
 | 2.1 | Select "Upload Decks" | Instruction screen: network **Anki-X3** (X3) or **Anki-X4** (X4), password **ankideck123**, `http://192.168.4.1` (plus "or http://anki.local" if mDNS started), "Decks uploaded: 0", "Press Back when done", and a QR code on the right captioned "Scan to join WiFi" |
 | 2.2 | On a phone: scan the QR code | Phone joins the Anki-X3/Anki-X4 hotspot without typing the password |
 | 2.3 | On computer: join the hotspot manually and open `http://192.168.4.1` | Upload page ("Upload Anki Deck") loads; `/` redirects to `/upload.html` |
-| 2.4 | Upload the test deck via the HTTP API: `curl -F "deckId=test-deck" -F "name=Test Deck" -F "file=@cards.jsonl" http://192.168.4.1/upload-deck` | JSON response `{"success":true, "bytes":..., "cards":5, "deckId":"test-deck"}` |
-| 2.5 | Watch the device screen (updates within ~1 second) | "Decks uploaded: 1" |
-| 2.6 | (Optional) Leave the upload screen idle for over 5 minutes | Device does NOT auto-sleep (the upload screen suppresses the 5-minute sleep timer so the hotspot survives); on other screens 5 idle minutes shows "Sleeping..." and sleeps |
-| 2.7 | Press Back, then select "Study" | Hotspot shuts down; "Test Deck" visible in deck list with "5 cards" |
+| 2.4 | Click the dashed area and select a real Anki `.apkg` export | Label changes to "FILE: <name>"; UPLOAD DECK button becomes enabled |
+| 2.5 | Click UPLOAD DECK | Progress bar appears (parsing drives 0-80%, upload the rest); on completion an underlined message: `SUCCESS: DECK "<name>" UPLOADED (N CARDS)` where the name is the `.apkg` file name without extension; button re-enabled |
+| 2.6 | Watch the device screen (updates within ~1 second) | "Decks uploaded: 1" |
+| 2.7 | Upload the JSONL test deck via the HTTP API: `curl -F "deckId=test-deck" -F "name=Test Deck" -F "file=@cards.jsonl" http://192.168.4.1/upload-deck` | JSON response `{"success":true, "bytes":..., "cards":5, "deckId":"test-deck"}`; counter increments again |
+| 2.8 | (Optional) Leave the upload screen idle for over 5 minutes | Device does NOT auto-sleep while the hotspot/web server is running; on other screens 5 idle minutes shows "Sleeping..." and sleeps |
+| 2.9 | (Optional) Long-press Power on the upload screen | Hotspot, mDNS, and web server shut down first (the WiFi network disappears), then "Sleeping..." is shown and the device sleeps |
+| 2.10 | Press Back, then select "Study" | Hotspot shuts down; "Test Deck" visible in deck list with "5 due" (new cards are all due) |
 
-**Note**: the browser page's UPLOAD DECK button is a stub in v0.1.0 (it only
-prints "INITIALIZING UPLOAD..."); the curl API is the supported upload path.
+**Note**: the browser page accepts only `.apkg` files; JSONL decks go through
+the curl API. Cards uploaded from an `.apkg` are converted to plain text
+(HTML stripped, entities decoded, `[sound:...]` removed) and reversed cards
+arrive with front/back swapped.
 
 **Report**:
 - [ ] PASS - Deck uploads and appears in list
@@ -122,7 +145,7 @@ prints "INITIALIZING UPLOAD..."); the curl API is the supported upload path.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 3.1 | Select "Study" from main menu | "Select Deck" list appears |
-| 3.2 | Observe deck info | Deck name on the left, card count ("N cards") on the right |
+| 3.2 | Observe deck info | Deck name on the left, due count ("N due") on the right - computed from the progress file, so a fresh deck shows all its cards due |
 | 3.3 | Navigate between decks (if multiple) | Selection moves correctly; list scrolls with a scrollbar when it overflows |
 | 3.4 | Press Confirm on a deck | Review session starts (card front shown) |
 | 3.5 | Press Back from the deck list | Returns to main menu |
@@ -152,25 +175,28 @@ prints "INITIALIZING UPLOAD..."); the curl API is the supported upload path.
 - [ ] Long text wraps correctly
 - [ ] Special characters display correctly (if applicable)
 
-### Test 5: SM-2 Scheduling
+### Test 5: SM-2 Scheduling and Due Dates
 
 This tests spaced repetition logic. Intervals are not shown on screen; verify
 them in the progress file on the SD card
-(`/.crosspoint/apps/anki/progress/<deckId>.json`).
+(`/.crosspoint/apps/anki/progress/<deckId>.json`). `due` and `lastReview` are
+**days since 1970-01-01 (UTC)**; `due: 0` means "always due" (a rating made
+with no usable clock).
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 5.1 | Review a new card, rate "Good" | Progress file: `repetitions` = 1, `interval` = 1, `ease` ≈ 2.5 |
-| 5.2 | Review the same card in a later session, rate "Good" | `repetitions` = 2, `interval` increases |
-| 5.3 | Rate a card "Again" | Its `repetitions` resets to 0, `ease` drops |
-| 5.4 | Rate a card "Easy" | Its `ease` increases above cards rated "Good" |
-
-**Note**: v0.1.0 does not enforce due dates - every session reviews all
-cards, and the `due` field in the progress file stays empty. Only verify the
-ease/interval/repetitions bookkeeping.
+| 5.1 | Review a new card, rate "Good" | Progress file: `repetitions` = 1, `interval` = 1, `ease` ≈ 2.36 (Good nudges ease down from the 2.5 start), `due` = today + 1 |
+| 5.2 | Review the same card when due again, rate "Good" | `repetitions` = 2, `interval` = 6, `due` = today + 6 |
+| 5.3 | Third "Good" | `repetitions` = 3, `interval` = round(6 x ease) - the all-Good ladder runs 1, 6, 12, 23, 41, ... days |
+| 5.4 | Rate a card "Again" or "Hard" | `repetitions` resets to 0, `interval` = 1, `due` = tomorrow, `ease` drops (never below 1.3). The card does NOT reappear in the same session |
+| 5.5 | Rate a card "Easy" | `ease` increases (ends above cards rated "Good") |
+| 5.6 | Rate every card in a small deck, then reopen the same deck | "No cards due today" screen immediately; deck list shows "0 due" for it |
+| 5.7 | (X3) Power the device off overnight, reopen the deck next day | Cards that were due "tomorrow" are offered again - the DS3231 RTC keeps the date across power-off |
+| 5.8 | (X4) Cold-boot without CrossPoint ever having WiFi/NTP, open a deck | No usable clock: EVERY card is reviewed regardless of stored due dates, and new ratings write `due: 0`. Once the clock is set again (CrossPoint NTP), sessions filter by due date and the next rating writes a real date |
 
 **Report**:
 - [ ] PASS - Progress file values change as described
+- [ ] PASS - Rated cards disappear from sessions until due (5.6)
 - [ ] FAIL - Describe issue: _______________
 
 ### Test 6: Session Statistics
@@ -178,7 +204,7 @@ ease/interval/repetitions bookkeeping.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 6.1 | Complete a review session | "Session Complete!" screen appears |
-| 6.2 | Observe statistics | "Reviewed: N" and "Remaining: N" shown (Remaining is 0 when the whole deck was rated); no percentage or timing stats in v0.1.0 |
+| 6.2 | Observe statistics | "Reviewed: N" and "Remaining: M" shown - Remaining counts cards still due today that were not rated this session (0 when everything due was rated); no percentage or timing stats |
 | 6.3 | Press Confirm or Back | Returns to deck list |
 
 **Report**:
@@ -206,8 +232,9 @@ ease/interval/repetitions bookkeeping.
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 8.1 | Upload an empty deck: `curl -F "deckId=empty-deck" -F "file=@empty.jsonl" http://192.168.4.1/upload-deck` (where `empty.jsonl` is a 0-byte file) | Request is rejected with HTTP 400 `{"error":"Empty or missing file"}`; no deck is created |
-| 8.2 | Upload a one-card deck, then select it and rate the card | After the last card, "Deck Complete!" screen with "Press Back to exit" |
-| 8.3 | Press Back (or Confirm) | Returns to deck list |
+| 8.2 | Upload a one-card deck, then select it and rate the card | "Session Complete!" summary appears (Reviewed: 1, Remaining: 0) |
+| 8.3 | Press Back (or Confirm) | Returns to deck list; the deck now shows "0 due" |
+| 8.4 | Reopen the same deck | "No cards due today" with "Press Back to exit" (the card is scheduled for a future day) |
 
 ### Test 9: Large Text
 
@@ -221,7 +248,7 @@ ease/interval/repetitions bookkeeping.
 |------|--------|-----------------|
 | 10.1 | Start review, rate some cards | Progress being made |
 | 10.2 | Power off device mid-session | Device powers off |
-| 10.3 | Power on, return to Anki app, reopen the deck | Ratings made before power-off are in the progress file (progress is saved after every rating); the session itself restarts from the first card |
+| 10.3 | Power on, return to Anki app, reopen the deck | Ratings made before power-off are in the progress file (progress is saved after every rating). With a working clock (X3, or X4 with the system time set) the already-rated cards are skipped and only the still-due ones are offered; with no clock (X4 after power-off without NTP) every card is offered again - see Test 5.8 |
 
 ### Test 11: Multiple Decks
 
@@ -254,6 +281,8 @@ Upload Decks screen is open.
 | 13.1 | Start uploading a large (multi-MB) deck via curl | Upload in progress |
 | 13.2 | Disconnect from the hotspot mid-upload | curl reports a connection error; device does not crash, "Decks uploaded" counter unchanged, deck not added to the list |
 | 13.3 | Reconnect and retry the same upload | Upload succeeds; counter increments |
+| 13.4 | On the browser page: click UPLOAD DECK, then drop off the hotspot before it finishes | Page shows "CONNECTION FAILED. CHECK YOU ARE ON THE DEVICE WIFI AND TRY AGAIN." in the error style; UPLOAD DECK is re-enabled for a retry |
+| 13.5 | Rejoin the hotspot and click UPLOAD DECK again | Upload succeeds; success message and device counter increment |
 
 ---
 
@@ -417,7 +446,7 @@ If you find a bug, please report using this format:
 | 2. Deck Upload | [ ] Pass [ ] Fail | |
 | 3. Deck List | [ ] Pass [ ] Fail | |
 | 4. Review Session | [ ] Pass [ ] Fail | |
-| 5. SM-2 Scheduling | [ ] Pass [ ] Fail | |
+| 5. SM-2 Scheduling + Due Dates | [ ] Pass [ ] Fail | |
 | 6. Session Stats | [ ] Pass [ ] Fail | |
 | 7. Exit to CrossPoint | [ ] Pass [ ] Fail | |
 | 8. Empty Deck | [ ] Pass [ ] Fail | |

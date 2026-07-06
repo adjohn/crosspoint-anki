@@ -4,8 +4,8 @@ A standalone Anki flashcard review app for Xteink e-ink e-readers. Study your An
 
 ## Features
 
-- **Upload decks over WiFi** - the device hosts its own hotspot and web server (no router or internet needed)
-- **SM-2 spaced repetition** algorithm for optimal learning
+- **Upload decks over WiFi** - the device hosts its own hotspot and web server (no router or internet needed); the browser page converts Anki `.apkg` exports on the fly
+- **SM-2 spaced repetition** with real due dates - each session shows only the cards due today
 - **Multi-deck support** - browse and select from multiple decks
 - **Offline capable** - works without internet
 - **E-ink optimized** - UI designed for e-ink displays
@@ -19,7 +19,7 @@ A standalone Anki flashcard review app for Xteink e-ink e-readers. Study your An
 | Device | Display | Extras |
 |--------|---------|--------|
 | Xteink X4 | 800x480 e-ink | - |
-| Xteink X3 | 792x528 e-ink | Tilt gestures (gyro), fuel-gauge battery reporting |
+| Xteink X3 | 792x528 e-ink | Tilt gestures (gyro), fuel-gauge battery reporting, DS3231 RTC (keeps due dates across power-off) |
 
 The same `app.bin` runs on both devices. At boot the app detects the hardware
 automatically (I2C fingerprint probe, cached in NVS) and configures the display
@@ -90,10 +90,25 @@ and inputs accordingly - no separate builds or configuration needed.
    enter the credentials manually).
 3. Open `http://192.168.4.1` (or `http://anki.local`) in a browser. The
    upload page is served from the SD card (`/` redirects to `/upload.html`).
-4. Upload your deck. **Note (v1):** the browser page's .apkg conversion and
-   upload button are not wired up yet - selecting a file works but clicking
-   "UPLOAD DECK" does not transfer anything. Until that lands, upload a deck
-   in the device's JSONL format directly via the HTTP API:
+4. Upload your deck. Click the dashed **SELECT .APKG FILE** area and pick an
+   Anki `.apkg` export (any other extension is rejected with "INVALID FILE
+   TYPE. PLEASE USE .APKG" and the button stays disabled). Click **UPLOAD
+   DECK**:
+   - A progress bar appears - parsing drives it to 80%, the upload to the
+     device takes it to 100%
+   - The parser converts each card to plain text for the e-ink screen: HTML
+     tags stripped (`<br>` becomes a line break), entities decoded,
+     `[sound:...]` references removed; reversed cards keep their swapped
+     front/back
+   - On success: `SUCCESS: DECK "<name>" UPLOADED (N CARDS)`; the deck's
+     display name is the `.apkg` file name (without extension) and the deck
+     ID is a slug of it (lowercased, non-alphanumerics become dashes)
+   - On a server error (e.g. file over 10MB) the server's message is shown;
+     if the request cannot reach the device at all the page shows
+     "CONNECTION FAILED. CHECK YOU ARE ON THE DEVICE WIFI AND TRY AGAIN." -
+     rejoin the hotspot and click UPLOAD DECK again
+5. Alternatively, upload a deck already in the device's JSONL format via the
+   HTTP API:
    ```bash
    curl -F "deckId=spanish-101" -F "name=Spanish 101" \
         -F "file=@cards.jsonl" http://192.168.4.1/upload-deck
@@ -104,30 +119,71 @@ and inputs accordingly - no separate builds or configuration needed.
      of JSONL lines received)
    - Uploads are limited to 10MB; the server writes `cards.jsonl` and
      `deck-metadata.json` under `/.crosspoint/apps/anki/decks/<deckId>/`
-5. The "Decks uploaded" counter on the device increments after each
+6. The "Decks uploaded" counter on the device increments after each
    successful upload. Press **Back** when done - this shuts down the web
    server, mDNS, and the hotspot, and returns to the main menu.
 
-The 5-minute auto-sleep timer is suspended while the upload screen is open,
-so the hotspot is not killed mid-upload.
+The 5-minute auto-sleep timer is suspended while the hotspot and web server
+are running, so the device does not sleep mid-upload. (If the hotspot failed
+to start - the "Could not start the WiFi hotspot" screen - auto-sleep works
+as usual.) Sleeping from the upload screen, e.g. via a long press of the
+power button, shuts down the hotspot, mDNS, and web server before the device
+powers down.
 
 ### Studying
 
 1. Select **Study** from the main menu, then pick a deck from the deck list
-   (each row shows the deck name and card count).
-2. **Review cards**:
+   (each row shows the deck name and how many cards are due today, e.g.
+   "12 due" - new cards are always due).
+2. **Review cards** - only cards due today are shown:
    - View the card front, press **Confirm** to reveal the answer
    - Press **Confirm** again to show the rating bar, then rate yourself:
      - **Left** = **Again** - forgot completely (repetitions reset)
-     - **Down** = **Hard** - remembered with difficulty
+     - **Down** = **Hard** - remembered with difficulty (also a lapse)
      - **Up** = **Good** - remembered with some effort
      - **Right** = **Easy** - remembered perfectly
    - Progress is saved to the SD card after every rating
-3. **Session ends** after the last card is rated; a summary screen shows
-   cards **Reviewed** and **Remaining**. (v1 reviews every card in the deck
-   in order - there is no due-date filtering yet.)
+3. **Session ends** after the last due card is rated; a summary screen shows
+   cards **Reviewed** and **Remaining** (cards still due today that were not
+   rated this session). Opening a deck with nothing due shows
+   "No cards due today".
 4. Press **Confirm** or **Back** on the summary to return to the deck list.
    **Back** during a review also returns to the deck list (progress is kept).
+
+#### Scheduling (SM-2)
+
+Each rating updates the card's ease factor, repetition count, interval, and
+due date:
+
+- **Again** or **Hard** is a lapse: repetitions reset to 0 and the card comes
+  back in **1 day**
+- The first successful review (**Good**/**Easy**) schedules the card in
+  **1 day**, the second in **6 days**; after that the previous interval is
+  multiplied by the ease factor - a card rated Good every time runs
+  1, 6, 12, 23, 41, ... days
+- **Easy** raises the ease factor; **Good** lowers it slightly, **Hard** and
+  **Again** lower it more (floor 1.3)
+
+The due date is `today + interval`. Sessions skip cards that are not yet due.
+A card rated **Again** is due tomorrow, so unlike desktop Anki it does not
+repeat within the same session.
+
+**Clock reality** - due dates need a real calendar date:
+
+- **X3**: the app reads the date from the battery-backed DS3231 RTC whenever
+  the system clock is unset, so scheduling keeps working across power-off.
+- **X4**: there is no RTC. The app relies on the ESP32 system clock, which
+  CrossPoint typically sets via NTP (when it has WiFi) before launching the
+  app. That clock survives a restart but **not** power-off/deep sleep or a
+  cold boot.
+- **No trustworthy clock**: the app degrades gracefully - every card is
+  treated as due (each session reviews the whole deck) and ratings store a
+  "due immediately" marker instead of a date. Scheduling resumes from the
+  next rating made with a valid clock.
+
+Day boundaries are UTC, not local midnight, so a card rated late in the
+evening may come due slightly earlier or later than local-midnight Anki
+would schedule it.
 
 ### Controls
 
@@ -183,17 +239,20 @@ Progress is stored separately at `progress/<deckId>.json`:
 ```
 {
   "deckId": "spanish-101",
-  "lastReview": "",
+  "lastReview": 20638,
   "cards": {
-    "1": {"ease": 2.5, "interval": 6, "repetitions": 3, "due": ""},
-    "2": {"ease": 2.3, "interval": 1, "repetitions": 0, "due": ""}
+    "1": {"ease": 2.36, "interval": 6, "repetitions": 2, "due": 20644},
+    "2": {"ease": 1.7, "interval": 1, "repetitions": 0, "due": 20639}
   }
 }
 ```
 
-The `due` and `lastReview` fields are reserved: v1 updates ease, interval,
-and repetitions after each rating but does not yet write due dates or filter
-cards by them - every session walks the whole deck.
+`due` and `lastReview` are days since 1970-01-01 (UTC epoch days). A `due`
+of `0` means "always due" - used for cards rated while no usable clock was
+available. Progress files written by older builds (which stored these fields
+as strings) still load: the dates migrate to `0`, so each previously tracked
+card is due once more and gets a real due date on its next rating (its ease,
+interval, and repetitions are preserved).
 
 ## Technical Specifications
 
@@ -205,6 +264,7 @@ cards by them - every session walks the whole deck.
 | **Display** | 800x480 e-ink | 792x528 e-ink |
 | **Battery reporting** | Analog (ADC) | BQ27220 fuel gauge (I2C) |
 | **Tilt sensor** | - | QMI8658 gyro (I2C) |
+| **RTC** | - (system clock only) | DS3231 (I2C, used for due dates) |
 
 - **Device detection**: automatic at boot (I2C fingerprint probe, result cached in NVS namespace `cphw`)
 - **RAM**: 400KB (app static usage ~95KB, ~29% of the 320KB DRAM pool)
@@ -218,9 +278,13 @@ cards by them - every session walks the whole deck.
 
 ### Supported Card Content
 - Plain text (card front/back strings are rendered as-is)
+- The browser upload page converts `.apkg` cards to plain text: HTML is
+  stripped (`<br>` and block tags become line breaks), entities are decoded,
+  and `[sound:...]` references are removed
 
-*Note: HTML/markdown formatting, images, audio, and long-text wrapping are
-not supported in v1 - very long card text may clip at the screen edge*
+*Note: images, audio, cloze rendering, and long-text wrapping are not
+supported - very long card text may clip at the screen edge, and non-Latin
+glyphs upload intact but may not be covered by the device fonts*
 
 ## Building from Source
 
@@ -238,6 +302,18 @@ pio run
 
 The compiled binary will be at `.pio/build/default/firmware.bin`
 
+### Automated Tests
+
+- `bash test/native/run.sh` - host-compiled unit tests exercising the real
+  SM-2 scheduler, the DS3231/epoch-day date decoding, and the card/progress
+  JSON (de)serialization + migration (currently 191 checks across 3 targets;
+  needs `g++` and the ArduinoJson dependency fetched by a prior `pio run`)
+- `bash test/web/run.sh` - end-to-end browser upload test: builds a real
+  `.apkg` fixture, drives `web/upload.html` in headless Chromium against a
+  mock server implementing the firmware's `/upload-deck` contract, and
+  asserts the UI states and the exact JSONL bytes received (currently 39
+  checks; needs `python3`, `node`, and Playwright with Chromium)
+
 ### Project Structure
 ```
 firmware/
@@ -247,7 +323,7 @@ firmware/
 │   ├── network/        # Web server for uploads
 │   ├── scheduling/     # SM-2 algorithm
 │   ├── storage/        # SD card I/O
-│   └── utils/          # Boot utilities
+│   └── utils/          # Boot + time/RTC utilities
 ├── lib/                # GfxRenderer, fonts, etc.
 └── open-x4-sdk/        # SDK submodule
 ```
@@ -259,11 +335,25 @@ firmware/
 - Check decks exist under `/.crosspoint/apps/anki/decks/<deckId>/` with both
   `cards.jsonl` and `deck-metadata.json` (decks without valid metadata are skipped)
 
+### "No cards due today"
+- Not a bug: every card in that deck is scheduled for a future date. Come
+  back when cards come due, or check `progress/<deckId>.json` for the `due`
+  values (days since 1970-01-01)
+
+### Cards you already reviewed keep coming back (X4)
+- The X4 has no RTC, so due dates only work while the system clock is set
+  (CrossPoint sets it via NTP when it has WiFi; the clock does not survive
+  power-off). Without a clock the app intentionally reviews everything
+
 ### Upload fails
+- Browser page says "CONNECTION FAILED...": your computer/phone dropped off
+  the device hotspot (Anki-X3 / Anki-X4) - rejoin and click UPLOAD DECK again
+- "INVALID FILE TYPE. PLEASE USE .APKG": the browser page only accepts
+  `.apkg` files; JSONL decks go through the `curl` API instead
 - `400 Missing deckId` / `Invalid deckId`: pass a `deckId` form field of 1-64
-  letters, digits, `-` or `_`
+  letters, digits, `-` or `_` (the browser page derives a valid one
+  automatically)
 - `413 File too large`: uploads are capped at 10MB
-- Verify your computer is connected to the device hotspot (Anki-X3 / Anki-X4)
 - The device screen shows "Could not start the WiFi hotspot" if the AP or web
   server failed to start - press Back and try again
 

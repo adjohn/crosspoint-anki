@@ -250,6 +250,14 @@ void WebServer::handleUploadDeck(AsyncWebServerRequest* request, String filename
             return;
         }
 
+        // A re-upload replaces the card set, so any tracked scheduling state
+        // may reference cards that no longer exist; drop it so countDue() and
+        // the review stream agree on one card set.
+        String progressPath = DeckStorage::getProgressPath(deckId);
+        if (SdMan.exists(progressPath.c_str())) {
+            SdMan.remove(progressPath.c_str());
+        }
+
         if (uploadTotalBytes > 0 && uploadLastByte != '\n') {
             uploadLineCount++;  // last line without trailing newline
         }

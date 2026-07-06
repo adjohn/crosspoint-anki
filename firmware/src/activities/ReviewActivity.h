@@ -7,6 +7,7 @@
 #include "../scheduling/SM2.h"
 #include <GfxRenderer.h>
 #include <MappedInputManager.h>
+#include <cstdint>
 
 class ReviewActivity : public Activity {
 public:
@@ -17,7 +18,7 @@ public:
         FINISHED
     };
 
-    ReviewActivity(String deckId, GfxRenderer& renderer, MappedInputManager& input);
+    ReviewActivity(String deckId, GfxRenderer& renderer, MappedInputManager& input, bool rtcAvailable);
     virtual ~ReviewActivity() = default;
 
     void onEnter() override;
@@ -30,15 +31,19 @@ private:
     CardStream cardStream;
     Card currentCard;
     DeckProgress deckProgress;
+    bool rtcAvailable;
     bool hasMoreCards;
     int reviewedCount;
-    int totalCards;
+    int dueTotal;        // cards due today at session start
+    int32_t today;       // epoch days, -1 when no trustworthy clock
 
     void showFront();
     void showBack();
     void showRating();
     void showFinished();
-    
+
     void processRating(SM2::Quality quality);
+    bool isCardDue(const String& cardId) const;
+    bool advanceToNextDueCard();
     void drawCardContent(const String& content, const char* title);
 };

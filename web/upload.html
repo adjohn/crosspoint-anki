@@ -145,7 +145,8 @@
     
     <script src="lib/jszip.min.js"></script>
     <script src="lib/sql-wasm.js"></script>
-    
+    <script src="js/apkg-parser.js"></script>
+
     <script>
         const fileInput = document.getElementById('fileInput');
         const uploadBtn = document.getElementById('uploadBtn');
@@ -175,13 +176,95 @@
             }
         });
         
-        uploadBtn.addEventListener('click', () => {
-            // TODO: Implement in Task 8
-            console.log('Upload clicked');
-            
-            // Visual feedback for now
-            if (fileInput.files.length) {
-                status.textContent = "INITIALIZING UPLOAD...";
+        let parser = null;
+
+        function slugifyDeckId(name) {
+            const slug = name
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .slice(0, 64)
+                .replace(/-+$/, '');
+            return slug || 'deck';
+        }
+
+        function setProgress(pct) {
+            progressBar.value = pct;
+            progressText.textContent = pct + '%';
+        }
+
+        function showStatus(message, cssClass) {
+            status.textContent = '';
+            const div = document.createElement('div');
+            if (cssClass) div.className = cssClass;
+            div.textContent = message;
+            status.appendChild(div);
+        }
+
+        uploadBtn.addEventListener('click', async () => {
+            if (!fileInput.files.length) return;
+            const file = fileInput.files[0];
+
+            uploadBtn.disabled = true;
+            fileInput.disabled = true;
+            progress.style.display = 'block';
+            setProgress(0);
+            showStatus('PARSING DECK...');
+
+            try {
+                if (!parser) parser = new ApkgParser();
+
+                // Parsing drives 0-80% of the bar; upload takes the rest.
+                const deck = await parser.parseApkg(file, (done, total) => {
+                    setProgress(total ? Math.round((done / total) * 80) : 0);
+                });
+
+                if (!deck.cards.length) {
+                    throw new Error('NO CARDS FOUND IN DECK');
+                }
+
+                const jsonl = deck.cards
+                    .map(c => JSON.stringify({ id: c.id, front: c.front, back: c.back, tags: c.tags }))
+                    .join('\n') + '\n';
+                const deckId = slugifyDeckId(deck.name);
+
+                setProgress(85);
+                showStatus('UPLOADING TO DEVICE...');
+
+                const formData = new FormData();
+                formData.append('deckId', deckId);
+                formData.append('name', deck.name);
+                formData.append('cardCount', String(deck.cards.length));
+                formData.append('file', new Blob([jsonl], { type: 'application/octet-stream' }),
+                                deckId + '.jsonl');
+
+                let response;
+                try {
+                    response = await fetch('/upload-deck', { method: 'POST', body: formData });
+                } catch (netErr) {
+                    throw new Error('CONNECTION FAILED. CHECK YOU ARE ON THE DEVICE WIFI AND TRY AGAIN.');
+                }
+
+                let result = null;
+                try {
+                    result = await response.json();
+                } catch (jsonErr) {
+                    // Non-JSON body; fall through to status-code handling
+                }
+
+                if (response.ok && result && result.success) {
+                    setProgress(100);
+                    const count = (typeof result.cards === 'number') ? result.cards : deck.cards.length;
+                    showStatus('SUCCESS: DECK "' + deck.name + '" UPLOADED (' + count + ' CARDS)', 'success');
+                } else {
+                    const detail = (result && result.error) ? result.error : ('HTTP ' + response.status);
+                    throw new Error('UPLOAD FAILED: ' + String(detail).toUpperCase());
+                }
+            } catch (err) {
+                showStatus(err.message || 'UPLOAD FAILED', 'error');
+            } finally {
+                uploadBtn.disabled = false;
+                fileInput.disabled = false;
             }
         });
     </script>

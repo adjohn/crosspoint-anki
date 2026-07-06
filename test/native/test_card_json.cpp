@@ -61,13 +61,21 @@ static void testMalformedLine() {
 }
 
 static void testMissingFieldBehavior() {
-    // Documents shipped behavior: as<String>() on an absent key serializes
-    // the null variant, so missing fields come back as the text "null"
-    // rather than an empty string (flagged in review).
+    // Regression: absent keys must parse to empty strings, not the literal
+    // text "null" (the old as<String>() behavior on a null variant).
     Card c = Card::fromJson("{\"id\":\"only-id\"}");
     CHECK(c.id == "only-id");
-    CHECK(c.front == "null");
-    CHECK(c.back == "null");
+    CHECK(c.front == "");
+    CHECK(c.back == "");
+
+    Card d = Card::fromJson("{\"front\":\"f\",\"back\":\"b\"}");
+    CHECK(d.id == "");
+
+    // Explicit JSON null behaves like a missing key
+    Card e = Card::fromJson("{\"id\":null,\"front\":null,\"back\":\"b\"}");
+    CHECK(e.id == "");
+    CHECK(e.front == "");
+    CHECK(e.back == "b");
 }
 
 static void testCardRoundTrip() {
@@ -89,47 +97,105 @@ static void testCardRoundTrip() {
 
 static void testProgressDefaults() {
     DeckProgress p;
+    CHECK(p.lastReview == 0);
     CardProgress& cp = p.getCardProgress(String("new-card"));
     CHECK(approx(cp.ease, 2.5f));
     CHECK(cp.interval == 0);
     CHECK(cp.repetitions == 0);
-    CHECK(cp.due == "");
+    CHECK(cp.due == 0);          // 0 = always due
     CHECK(p.cards.size() == 1);  // operator[] default-inserts
 }
 
 static void testProgressRoundTrip() {
     DeckProgress p;
     p.deckId = "deck-1";
-    p.lastReview = "2026-07-06";
+    p.lastReview = 20640;  // 2026-07-06 in epoch days
     CardProgress a;
     a.ease = 2.36f;
     a.interval = 6;
     a.repetitions = 3;
-    a.due = "2026-07-12";
+    a.due = 20646;
     p.cards[String("card-a")] = a;
     CardProgress b;
     b.ease = 1.3f;
     b.interval = 0;
     b.repetitions = 0;
-    b.due = "";
+    b.due = 0;
     p.cards[String("card-b")] = b;
 
     DeckProgress q = DeckProgress::fromJson(p.toJson());
     CHECK(q.deckId == "deck-1");
-    CHECK(q.lastReview == "2026-07-06");
+    CHECK(q.lastReview == 20640);
     CHECK(q.cards.size() == 2);
     CHECK(approx(q.cards[String("card-a")].ease, 2.36f));
     CHECK(q.cards[String("card-a")].interval == 6);
     CHECK(q.cards[String("card-a")].repetitions == 3);
-    CHECK(q.cards[String("card-a")].due == "2026-07-12");
+    CHECK(q.cards[String("card-a")].due == 20646);
     CHECK(approx(q.cards[String("card-b")].ease, 1.3f));
     CHECK(q.cards[String("card-b")].repetitions == 0);
+    CHECK(q.cards[String("card-b")].due == 0);
+}
+
+static void testProgressLenientMigration() {
+    // Old-format files stored due/lastReview as strings and may omit fields
+    // entirely; both must migrate to 0 ("due immediately" / "never
+    // reviewed") without corrupting the numeric fields.
+    DeckProgress p = DeckProgress::fromJson(String(
+        "{\"deckId\":\"old\",\"lastReview\":\"2026-07-06\",\"cards\":{"
+        "\"a\":{\"ease\":2.36,\"interval\":6,\"repetitions\":3,\"due\":\"2026-07-12\"},"
+        "\"b\":{\"ease\":1.3,\"interval\":0,\"repetitions\":0,\"due\":\"\"},"
+        "\"c\":{}"
+        "}}"));
+    CHECK(p.deckId == "old");
+    CHECK(p.lastReview == 0);
+    CHECK(p.cards.size() == 3);
+    CHECK(p.cards[String("a")].due == 0);
+    CHECK(p.cards[String("a")].interval == 6);
+    CHECK(p.cards[String("a")].repetitions == 3);
+    CHECK(approx(p.cards[String("a")].ease, 2.36f));
+    CHECK(p.cards[String("b")].due == 0);
+    CHECK(approx(p.cards[String("c")].ease, 2.5f));  // missing -> defaults
+    CHECK(p.cards[String("c")].interval == 0);
+    CHECK(p.cards[String("c")].due == 0);
 }
 
 static void testProgressMalformed() {
     DeckProgress p = DeckProgress::fromJson(String("not json at all"));
     CHECK(p.deckId == "");
+    CHECK(p.lastReview == 0);
     CHECK(p.cards.empty());
+}
+
+static void testCountDue() {
+    const int32_t today = 20640;
+
+    DeckProgress p;
+    CardProgress cp;
+
+    cp.due = today - 3;                    // overdue
+    p.cards[String("overdue")] = cp;
+    cp.due = today;                        // due today
+    p.cards[String("today")] = cp;
+    cp.due = 0;                            // always due
+    p.cards[String("always")] = cp;
+    cp.due = today + 1;                    // due tomorrow
+    p.cards[String("tomorrow")] = cp;
+    cp.due = today + 30;                   // far future
+    p.cards[String("future")] = cp;
+
+    // 6 cards in the deck, 5 tracked: 1 new + overdue + today + always = 4
+    CHECK(p.countDue(today, 6) == 4);
+    // All tracked, none new
+    CHECK(p.countDue(today, 5) == 3);
+    // Stale progress entries beyond cardCount never go negative on new cards
+    CHECK(p.countDue(today, 2) == 3);
+    // No clock: everything counts as due
+    CHECK(p.countDue(-1, 6) == 6);
+    // Empty progress: all cards are new and due
+    DeckProgress empty;
+    CHECK(empty.countDue(today, 42) == 42);
+    CHECK(empty.countDue(-1, 42) == 42);
+    CHECK(empty.countDue(today, 0) == 0);
 }
 
 int main() {
@@ -141,7 +207,9 @@ int main() {
     testCardRoundTrip();
     testProgressDefaults();
     testProgressRoundTrip();
+    testProgressLenientMigration();
     testProgressMalformed();
+    testCountDue();
 
     std::printf("test_card_json: %d checks, %d failed\n", testsRun, testsFailed);
     return testsFailed == 0 ? 0 : 1;

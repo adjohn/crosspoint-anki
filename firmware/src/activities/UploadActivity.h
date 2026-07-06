@@ -30,5 +30,5 @@ public:
     void onEnter() override;
     void onExit() override;
     void loop() override;
-    bool keepAwake() const override { return true; }
+    bool keepAwake() const override { return webServer.isRunning(); }
 };

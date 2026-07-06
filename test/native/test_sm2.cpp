@@ -1,10 +1,12 @@
 // Native unit tests for the SM-2 scheduler (firmware/src/scheduling/SM2.{h,cpp})
-// plus a mirror of how ReviewActivity::processRating() applies it.
+// plus a mirror of how ReviewActivity::processRating() applies it,
+// including due-date arithmetic.
 // Build/run: test/native/run.sh
 #include "scheduling/SM2.h"
 
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 
 static int testsRun = 0;
 static int testsFailed = 0;
@@ -22,46 +24,57 @@ static bool approx(float a, float b, float eps = 1e-4f) {
     return std::fabs(a - b) < eps;
 }
 
-// Mirrors the scheduling core of ReviewActivity::processRating()
-// (firmware/src/activities/ReviewActivity.cpp lines 175-190) so the
-// as-shipped update sequence is executable on the host.
+// Mirrors the scheduling core of ReviewActivity::processRating(): ease first,
+// then repetitions, then the interval from the post-update repetition count
+// and the previous interval, then the due date.
 struct CardState {
     float ease = 2.5f;
     int interval = 0;
     int repetitions = 0;
+    int32_t due = 0;  // epoch days; 0 = always due
 };
 
-static void applyRating(CardState& cp, SM2::Quality quality) {
-    float newEase = SM2::updateEaseFactor(cp.ease, quality);
-    int newInterval = SM2::calculateInterval(cp.repetitions, newEase);
-    cp.ease = newEase;
-    cp.interval = newInterval;
+static void applyRating(CardState& cp, SM2::Quality quality, int32_t today = -1) {
+    cp.ease = SM2::updateEaseFactor(cp.ease, quality);
     if (quality >= SM2::GOOD) {
         cp.repetitions++;
     } else {
         cp.repetitions = 0;
     }
+    cp.interval = SM2::calculateInterval(cp.repetitions, cp.interval, cp.ease);
+
+    if (today >= 0) {
+        cp.due = today + cp.interval;
+    } else {
+        cp.due = 0;
+    }
 }
 
 static void testCalculateInterval() {
-    // SM-2 spec: I(1)=1, I(2)=6, I(n)=I(n-1)*EF
-    CHECK(SM2::calculateInterval(0, 2.5f) == 0);
-    CHECK(SM2::calculateInterval(-3, 2.5f) == 0);
-    CHECK(SM2::calculateInterval(1, 2.5f) == 1);
-    CHECK(SM2::calculateInterval(1, 1.3f) == 1);   // EF-independent
-    CHECK(SM2::calculateInterval(2, 2.5f) == 6);
-    CHECK(SM2::calculateInterval(2, 1.3f) == 6);   // EF-independent
-    CHECK(SM2::calculateInterval(3, 2.5f) == 15);  // round(6*2.5)
-    CHECK(SM2::calculateInterval(4, 2.5f) == 38);  // round(6*2.5^2) = round(37.5)
-    CHECK(SM2::calculateInterval(5, 2.5f) == 94);  // round(6*2.5^3) = round(93.75)
-    CHECK(SM2::calculateInterval(3, 1.3f) == 8);   // round(7.8)
-    CHECK(SM2::calculateInterval(4, 1.3f) == 10);  // round(10.14)
+    // SM-2 spec: I(1)=1, I(2)=6, I(n)=round(I(n-1)*EF); lapse restarts at 1
+    CHECK(SM2::calculateInterval(0, 0, 2.5f) == 1);    // lapse
+    CHECK(SM2::calculateInterval(0, 40, 2.5f) == 1);   // lapse ignores prev
+    CHECK(SM2::calculateInterval(-3, 12, 2.5f) == 1);
+    CHECK(SM2::calculateInterval(1, 0, 2.5f) == 1);
+    CHECK(SM2::calculateInterval(1, 0, 1.3f) == 1);    // EF-independent
+    CHECK(SM2::calculateInterval(2, 1, 2.5f) == 6);
+    CHECK(SM2::calculateInterval(2, 1, 1.3f) == 6);    // EF-independent
+    CHECK(SM2::calculateInterval(3, 6, 2.5f) == 15);   // round(6*2.5)
+    CHECK(SM2::calculateInterval(4, 15, 2.5f) == 38);  // round(37.5)
+    CHECK(SM2::calculateInterval(3, 6, 1.3f) == 8);    // round(7.8)
+    CHECK(SM2::calculateInterval(4, 8, 1.3f) == 10);   // round(10.4)
 
-    // Growth is monotonic non-decreasing across repetitions at the EF floor
-    int prev = 0;
-    for (int r = 1; r <= 12; ++r) {
-        int cur = SM2::calculateInterval(r, 1.3f);
-        CHECK(cur >= prev);
+    // The next interval only depends on the PREVIOUS interval, not on
+    // recomputing the whole ladder from the current ease
+    CHECK(SM2::calculateInterval(7, 30, 1.3f) == 39);  // round(39.0)
+
+    // Monotonic growth guard: never shrinks, even from a migrated interval 0
+    CHECK(SM2::calculateInterval(5, 0, 1.3f) == 1);
+    CHECK(SM2::calculateInterval(3, 1, 1.3f) == 2);    // round(1.3)=1 bumped to 2
+    int prev = 6;
+    for (int r = 3; r <= 14; ++r) {
+        int cur = SM2::calculateInterval(r, prev, 1.3f);
+        CHECK(cur > prev);
         prev = cur;
     }
 }
@@ -90,75 +103,49 @@ static void testUpdateEaseFactor() {
 
 static void testFirstReviewPerGrade() {
     // First review of a brand-new card (reps=0), one case per grade.
-    // NOTE: processRating() computes the interval from the PRE-increment
-    // repetition count, so a new card gets interval 0 even on Good/Easy.
-    // These assertions document the shipped behavior (flagged in review).
     {
         CardState cp;
         applyRating(cp, SM2::AGAIN);
         CHECK(cp.repetitions == 0);
-        CHECK(cp.interval == 0);
+        CHECK(cp.interval == 1);       // lapse: retry tomorrow
         CHECK(approx(cp.ease, 1.7f));
     }
     {
         CardState cp;
-        applyRating(cp, SM2::HARD);   // q=2 < GOOD: counts as a lapse
+        applyRating(cp, SM2::HARD);    // q=2 < GOOD: counts as a lapse
         CHECK(cp.repetitions == 0);
-        CHECK(cp.interval == 0);
+        CHECK(cp.interval == 1);
         CHECK(approx(cp.ease, 2.18f));
     }
     {
         CardState cp;
         applyRating(cp, SM2::GOOD);
         CHECK(cp.repetitions == 1);
-        CHECK(cp.interval == 0);      // pre-increment reps: 0, not 1 day
+        CHECK(cp.interval == 1);       // first success: 1 day
         CHECK(approx(cp.ease, 2.36f));
     }
     {
         CardState cp;
         applyRating(cp, SM2::EASY);
         CHECK(cp.repetitions == 1);
-        CHECK(cp.interval == 0);      // pre-increment reps
+        CHECK(cp.interval == 1);
         CHECK(approx(cp.ease, 2.6f));
     }
 }
 
 static void testIntervalGrowthOverRepeatedGood() {
+    // Canonical incremental ladder: 1, 6, then round(prev*EF), with Good
+    // decaying ease 2.36, 2.22, 2.08, 1.94, 1.80, 1.66, 1.52, 1.38
     CardState cp;
+    const int expected[8] = {1, 6, 12, 23, 41, 68, 103, 142};
+    int prev = 0;
     for (int i = 0; i < 8; ++i) {
-        float expectedEase = SM2::updateEaseFactor(cp.ease, SM2::GOOD);
-        int expectedInterval = SM2::calculateInterval(cp.repetitions, expectedEase);
-        int expectedReps = cp.repetitions + 1;
-
         applyRating(cp, SM2::GOOD);
-
-        CHECK(approx(cp.ease, expectedEase));
-        CHECK(cp.interval == expectedInterval);
-        CHECK(cp.repetitions == expectedReps);
+        CHECK(cp.repetitions == i + 1);
+        CHECK(cp.interval == expected[i]);
+        CHECK(cp.interval > prev);  // strictly monotonic under repeated Good
+        prev = cp.interval;
     }
-    // Shipped quirk (flagged in review): calculateInterval() re-applies the
-    // CURRENT ease to every repetition instead of the SM-2 incremental
-    // I(n)=I(n-1)*EF, and Good lowers ease by 0.14 each time, so the interval
-    // can SHRINK under repeated Good once ease decays: 0,1,6,12,19,27,32,30.
-    {
-        CardState q;
-        const int expected[8] = {0, 1, 6, 12, 19, 27, 32, 30};
-        for (int i = 0; i < 8; ++i) {
-            applyRating(q, SM2::GOOD);
-            CHECK(q.interval == expected[i]);
-        }
-        CHECK(expected[7] < expected[6]);  // documents the non-monotonic step
-    }
-    // Shipped sequence from a fresh card: 0, 1, 6, then EF-scaled growth
-    CardState fresh;
-    applyRating(fresh, SM2::GOOD);
-    CHECK(fresh.interval == 0);
-    applyRating(fresh, SM2::GOOD);
-    CHECK(fresh.interval == 1);
-    applyRating(fresh, SM2::GOOD);
-    CHECK(fresh.interval == 6);
-    applyRating(fresh, SM2::GOOD);
-    CHECK(fresh.interval == 12);  // round(6 * 1.94)
 }
 
 static void testAgainResetsRepetitions() {
@@ -167,18 +154,49 @@ static void testAgainResetsRepetitions() {
     applyRating(cp, SM2::GOOD);
     applyRating(cp, SM2::GOOD);
     CHECK(cp.repetitions == 3);
+    CHECK(cp.interval == 12);
 
+    // Lapse: repetitions and interval both reset
     applyRating(cp, SM2::AGAIN);
     CHECK(cp.repetitions == 0);
-    // Documented shipped quirk: the interval is computed from the
-    // pre-reset repetition count, so a lapse still yields a long interval.
-    CHECK(cp.interval == SM2::calculateInterval(3, cp.ease));
-    CHECK(cp.interval > 6);
+    CHECK(cp.interval == 1);
 
     // After the reset the ladder restarts from the bottom
     applyRating(cp, SM2::GOOD);
     CHECK(cp.repetitions == 1);
-    CHECK(cp.interval == 0);
+    CHECK(cp.interval == 1);
+    applyRating(cp, SM2::GOOD);
+    CHECK(cp.interval == 6);
+}
+
+static void testDueDateArithmetic() {
+    const int32_t today = 20640;  // 2026-07-06
+
+    // New card rated Good: due tomorrow
+    CardState cp;
+    applyRating(cp, SM2::GOOD, today);
+    CHECK(cp.due == today + 1);
+
+    // Second Good (as if 1 day later): due 6 days out
+    applyRating(cp, SM2::GOOD, today + 1);
+    CHECK(cp.interval == 6);
+    CHECK(cp.due == today + 1 + 6);
+
+    // Lapse: due tomorrow again
+    applyRating(cp, SM2::AGAIN, today + 7);
+    CHECK(cp.interval == 1);
+    CHECK(cp.due == today + 8);
+
+    // No trustworthy clock: due stays 0 ("always due"), no date arithmetic
+    CardState noClock;
+    applyRating(noClock, SM2::GOOD, -1);
+    CHECK(noClock.due == 0);
+    CHECK(noClock.interval == 1);
+
+    // A card scheduled while the clock worked, rated again with no clock,
+    // falls back to always-due rather than keeping a bogus date
+    applyRating(cp, SM2::GOOD, -1);
+    CHECK(cp.due == 0);
 }
 
 int main() {
@@ -187,6 +205,7 @@ int main() {
     testFirstReviewPerGrade();
     testIntervalGrowthOverRepeatedGood();
     testAgainResetsRepetitions();
+    testDueDateArithmetic();
 
     std::printf("test_sm2: %d checks, %d failed\n", testsRun, testsFailed);
     return testsFailed == 0 ? 0 : 1;

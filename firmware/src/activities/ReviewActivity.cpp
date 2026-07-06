@@ -1,4 +1,5 @@
 #include "ReviewActivity.h"
+#include "../utils/TimeUtils.h"
 #include <Arduino.h>
 
 // Font constants - assuming these are available in GfxRenderer
@@ -7,13 +8,15 @@
 #define FONT_MEDIUM 2
 #define FONT_SMALL 1
 
-ReviewActivity::ReviewActivity(String deckId, GfxRenderer& renderer, MappedInputManager& input)
+ReviewActivity::ReviewActivity(String deckId, GfxRenderer& renderer, MappedInputManager& input, bool rtcAvailable)
     : Activity("Review", renderer, input),
       deckId(deckId),
       currentState(SHOWING_FRONT),
+      rtcAvailable(rtcAvailable),
       hasMoreCards(true),
       reviewedCount(0),
-      totalCards(0) {
+      dueTotal(0),
+      today(-1) {
 }
 
 void ReviewActivity::onEnter() {
@@ -21,12 +24,12 @@ void ReviewActivity::onEnter() {
 
     // Load progress and open stream
     deckProgress = DeckStorage::loadProgress(deckId);
-    totalCards = DeckStorage::loadDeckMetadata(deckId).cardCount;
+    today = TimeUtils::todayEpochDays(rtcAvailable);
+    dueTotal = deckProgress.countDue(today, DeckStorage::loadDeckMetadata(deckId).cardCount);
 
     if (DeckStorage::openCardStream(deckId, cardStream)) {
-        // Get first card
-        if (cardStream.hasNext()) {
-            currentCard = cardStream.readNext();
+        // Get first due card (with no clock, every card is due)
+        if (advanceToNextDueCard()) {
             hasMoreCards = true;
             showFront();
         } else {
@@ -166,8 +169,10 @@ void ReviewActivity::showRating() {
 
 void ReviewActivity::showFinished() {
     currentState = FINISHED;
+    const bool nothingDue = (reviewedCount == 0 && dueTotal == 0);
     renderer.clearScreen(0xFF);
-    renderer.drawCenteredText(FONT_LARGE, renderer.getScreenHeight() / 2 - 20, "Deck Complete!");
+    renderer.drawCenteredText(FONT_LARGE, renderer.getScreenHeight() / 2 - 20,
+                              nothingDue ? "No cards due today" : "Deck Complete!");
     renderer.drawCenteredText(FONT_SMALL, renderer.getScreenHeight() / 2 + 20, "Press Back to exit");
     renderer.displayBuffer();
 }
@@ -175,37 +180,63 @@ void ReviewActivity::showFinished() {
 void ReviewActivity::processRating(SM2::Quality quality) {
     // Update card progress
     CardProgress& cp = deckProgress.getCardProgress(currentCard.id);
-    
-    // Apply SM-2 algorithm
-    float newEase = SM2::updateEaseFactor(cp.ease, quality);
-    int newInterval = SM2::calculateInterval(cp.repetitions, newEase);
-    
-    // Update stats
-    cp.ease = newEase;
-    cp.interval = newInterval;
+
+    // Apply SM-2: ease first, then repetitions, then the interval from the
+    // post-update repetition count and the card's previous interval
+    cp.ease = SM2::updateEaseFactor(cp.ease, quality);
     if (quality >= SM2::GOOD) {
         cp.repetitions++;
     } else {
         cp.repetitions = 0; // Reset on failure
     }
-    
+    cp.interval = SM2::calculateInterval(cp.repetitions, cp.interval, cp.ease);
+
+    if (today >= 0) {
+        cp.due = today + cp.interval;
+        deckProgress.lastReview = today;
+    } else {
+        cp.due = 0; // no clock: always due
+    }
+
     // Save progress
     // In a real app, we might batch save or save on exit, but safety first
     DeckStorage::saveProgress(deckId, deckProgress);
 
     reviewedCount++;
 
-    // Move to next card
-    if (cardStream.hasNext()) {
-        currentCard = cardStream.readNext();
+    // Move to the next due card
+    if (advanceToNextDueCard()) {
         showFront();
     } else {
-        // Session over: go straight to the summary screen
+        // Session over: go straight to the summary screen. Remaining = cards
+        // still due today that weren't rated this session.
         hasMoreCards = false;
-        int remaining = totalCards - reviewedCount;
+        int remaining = dueTotal - reviewedCount;
         if (remaining < 0) remaining = 0;
         requestNav(NavTarget::SessionComplete, deckId, reviewedCount, remaining);
     }
+}
+
+bool ReviewActivity::isCardDue(const String& cardId) const {
+    if (today < 0) {
+        return true; // no trustworthy clock: review everything
+    }
+    auto it = deckProgress.cards.find(cardId);
+    if (it == deckProgress.cards.end()) {
+        return true; // new card, never rated
+    }
+    return it->second.due <= today;
+}
+
+bool ReviewActivity::advanceToNextDueCard() {
+    while (cardStream.hasNext()) {
+        Card card = cardStream.readNext();
+        if (!card.id.isEmpty() && isCardDue(card.id)) {
+            currentCard = card;
+            return true;
+        }
+    }
+    return false;
 }
 
 void ReviewActivity::drawCardContent(const String& content, const char* title) {

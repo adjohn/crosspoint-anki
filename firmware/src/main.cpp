@@ -66,6 +66,10 @@ void enterNewActivity(Activity* activity) {
 void enterDeepSleep() {
     Serial.printf("[%lu] Entering deep sleep...\n", millis());
 
+    // Tear down the current activity (stops soft-AP/mDNS/web server and
+    // cleans up in-flight uploads) before powering anything down
+    exitActivity();
+
     // Clear screen before sleep
     renderer.clearScreen();
     renderer.drawCenteredText(UI_12_FONT_ID, renderer.getScreenHeight() / 2, "Sleeping...", true);
@@ -94,11 +98,11 @@ void handleNavRequest(const Activity::NavRequest& nav) {
             break;
         case Activity::NavTarget::DeckList:
             exitActivity();
-            enterNewActivity(new DeckListActivity(renderer, mappedInputManager));
+            enterNewActivity(new DeckListActivity(renderer, mappedInputManager, gpio.deviceIsX3()));
             break;
         case Activity::NavTarget::Review:
             exitActivity();
-            enterNewActivity(new ReviewActivity(nav.deckId, renderer, mappedInputManager));
+            enterNewActivity(new ReviewActivity(nav.deckId, renderer, mappedInputManager, gpio.deviceIsX3()));
             break;
         case Activity::NavTarget::SessionComplete:
             exitActivity();

@@ -31,6 +31,12 @@ run_test test_sm2 \
     -I "$HERE/shim" -I "$SRC" \
     "$HERE/test_sm2.cpp" "$SRC/scheduling/SM2.cpp"
 
+# TimeUtils' DS3231/Wire path is behind #ifdef ARDUINO; the pure
+# BCD/civil-date helpers and the system-time path compile host-side.
+run_test test_timeutils \
+    -I "$HERE/shim" -I "$SRC" \
+    "$HERE/test_timeutils.cpp" "$SRC/utils/TimeUtils.cpp"
+
 if [ -d "$ARDUINOJSON" ]; then
     run_test test_card_json \
         -DARDUINOJSON_ENABLE_ARDUINO_STRING=1 \

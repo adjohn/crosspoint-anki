@@ -1,18 +1,29 @@
 #include "DeckListActivity.h"
+#include "../utils/TimeUtils.h"
 #include <GfxRenderer.h>
 #include <MappedInputManager.h>
 #include <algorithm>
 
-DeckListActivity::DeckListActivity(GfxRenderer& renderer, MappedInputManager& input)
-    : Activity("DeckList", renderer, input), selectedIndex(0), scrollOffset(0) {}
+DeckListActivity::DeckListActivity(GfxRenderer& renderer, MappedInputManager& input, bool rtcAvailable)
+    : Activity("DeckList", renderer, input), rtcAvailable(rtcAvailable), selectedIndex(0), scrollOffset(0) {}
 
 void DeckListActivity::onEnter() {
     Activity::onEnter();
     decks = DeckStorage::listDecks();
-    
+
     std::sort(decks.begin(), decks.end(), [](const DeckMetadata& a, const DeckMetadata& b) {
         return a.name < b.name;
     });
+
+    // Due counts come from progress.json alone (no cards.jsonl streaming).
+    // With no trustworthy clock (today == -1) every card counts as due.
+    const int32_t today = TimeUtils::todayEpochDays(rtcAvailable);
+    dueCounts.clear();
+    dueCounts.reserve(decks.size());
+    for (const auto& deck : decks) {
+        DeckProgress progress = DeckStorage::loadProgress(deck.id);
+        dueCounts.push_back(progress.countDue(today, deck.cardCount));
+    }
 
     drawList();
 }
@@ -71,18 +82,15 @@ void DeckListActivity::drawList() {
             const auto& deck = decks[deckIndex];
             bool isSelected = (deckIndex == selectedIndex);
 
+            String countStr = String(dueCounts[deckIndex]) + " due";
+            int countWidth = renderer.getTextWidth(1, countStr.c_str());
+
             if (isSelected) {
                 renderer.fillRect(0, y - 5, renderer.getScreenWidth(), LINE_HEIGHT);
                 renderer.drawText(1, 10, y, deck.name.c_str(), false);
-                
-                String countStr = String(deck.cardCount) + " cards";
-                int countWidth = renderer.getTextWidth(1, countStr.c_str());
                 renderer.drawText(1, renderer.getScreenWidth() - countWidth - 10, y, countStr.c_str(), false);
             } else {
                 renderer.drawText(1, 10, y, deck.name.c_str(), true);
-                
-                String countStr = String(deck.cardCount) + " cards";
-                int countWidth = renderer.getTextWidth(1, countStr.c_str());
                 renderer.drawText(1, renderer.getScreenWidth() - countWidth - 10, y, countStr.c_str(), true);
             }
 
