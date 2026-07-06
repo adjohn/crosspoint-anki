@@ -25,7 +25,7 @@ void MainMenuActivity::toggleTilt() {
     input.setTiltEnabled(!input.isTiltEnabled());
 
     Preferences prefs;
-    prefs.begin("anki", false);
+    prefs.begin("flashink", false);
     prefs.putBool("tilt", input.isTiltEnabled());
     prefs.end();
 
@@ -76,7 +76,7 @@ void MainMenuActivity::drawMenu() {
     renderer.clearScreen();
 
     renderer.fillRect(0, 0, renderer.getScreenWidth(), HEADER_HEIGHT);
-    renderer.drawCenteredText(2, HEADER_HEIGHT / 2 - 10, "CrossPoint Anki", false);
+    renderer.drawCenteredText(2, HEADER_HEIGHT / 2 - 10, "Flashink", false);
 
     int y = HEADER_HEIGHT + 20;
 

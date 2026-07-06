@@ -1,8 +1,8 @@
 {
-  "id": "anki",
-  "name": "Anki",
+  "id": "flashink",
+  "name": "Flashink",
   "version": "0.1.0",
-  "description": "Anki flashcards for CrossPoint on Xteink X3 and X4",
-  "author": "DChells",
+  "description": "Spaced-repetition flashcards for CrossPoint on Xteink X3 and X4",
+  "author": "adjohn",
   "minFirmware": "0.16.0"
 }

@@ -1,6 +1,13 @@
-# Anki - Flashcard App for CrossPoint E-Readers (Xteink X3 & X4)
+# Flashink
 
-A standalone Anki flashcard review app for Xteink e-ink e-readers. Study your Anki decks with SM-2 spaced repetition directly on the device.
+**Spaced-repetition flashcards for e-ink readers.** Flashink is a standalone
+flashcard app for the Xteink X3 and X4 running [CrossPoint](https://github.com/crosspoint-reader/crosspoint-reader) -
+import your Anki `.apkg` decks over WiFi and study them with SM-2 scheduling,
+right on the e-reader. Your device stays a normal CrossPoint e-reader;
+Flashink is an app you launch from its Apps menu and exit back out of.
+
+*Flashink is an independent community project. It imports the `.apkg` deck
+format but is not affiliated with or endorsed by Anki/Ankitects Pty Ltd.*
 
 ## Features
 
@@ -37,21 +44,21 @@ and inputs accordingly - no separate builds or configuration needed.
 
 1. Copy `firmware/app.bin` and `firmware/app.json` to SD card:
    ```
-   /.crosspoint/apps/anki/
+   /.crosspoint/apps/flashink/
      ├── app.bin
      └── app.json
    ```
 
 2. Create deck directories:
    ```
-   /.crosspoint/apps/anki/
+   /.crosspoint/apps/flashink/
      ├── decks/       # Deck files will be stored here
      └── progress/    # Review progress stored here
    ```
 
 3. Copy web files:
    ```
-   /.crosspoint/apps/anki/web/
+   /.crosspoint/apps/flashink/web/
      ├── upload.html
      ├── js/apkg-parser.js
      └── lib/
@@ -62,7 +69,7 @@ and inputs accordingly - no separate builds or configuration needed.
 
 4. Insert SD card into the device and power on
 
-5. Launch Anki from CrossPoint Apps menu
+5. Launch Flashink from CrossPoint Apps menu
 
 ## Usage
 
@@ -79,16 +86,16 @@ and inputs accordingly - no separate builds or configuration needed.
 
 1. Select **Upload Decks** from the main menu. The device starts its own
    WiFi hotspot (no router involved) and shows an instruction screen with:
-   - The network name: **Anki-X3** on an X3, **Anki-X4** on an X4
-   - The password: **ankideck123**
-   - The address to open: **http://192.168.4.1** (plus `or http://anki.local`
+   - The network name: **Flashink-X3** on an X3, **Flashink-X4** on an X4
+   - The password: **flashink123**
+   - The address to open: **http://192.168.4.1** (plus `or http://flashink.local`
      when mDNS started successfully)
    - A **QR code** on the right side - scan it with a phone to join the
      hotspot without typing the password
    - A **"Decks uploaded: N"** counter that updates as decks arrive
 2. Join the WiFi network from your computer or phone (scan the QR code or
    enter the credentials manually).
-3. Open `http://192.168.4.1` (or `http://anki.local`) in a browser. The
+3. Open `http://192.168.4.1` (or `http://flashink.local`) in a browser. The
    upload page is served from the SD card (`/` redirects to `/upload.html`).
 4. Upload your deck. Click the dashed **SELECT .APKG FILE** area and pick an
    Anki `.apkg` export (any other extension is rejected with "INVALID FILE
@@ -118,7 +125,7 @@ and inputs accordingly - no separate builds or configuration needed.
    - `cardCount` (optional): overrides the card count (defaults to the number
      of JSONL lines received)
    - Uploads are limited to 10MB; the server writes `cards.jsonl` and
-     `deck-metadata.json` under `/.crosspoint/apps/anki/decks/<deckId>/`
+     `deck-metadata.json` under `/.crosspoint/apps/flashink/decks/<deckId>/`
 6. The "Decks uploaded" counter on the device increments after each
    successful upload. Press **Back** when done - this shuts down the web
    server, mDNS, and the hotspot, and returns to the main menu.
@@ -332,7 +339,7 @@ firmware/
 
 ### "No decks found"
 - Ensure decks are uploaded via the Upload Decks screen
-- Check decks exist under `/.crosspoint/apps/anki/decks/<deckId>/` with both
+- Check decks exist under `/.crosspoint/apps/flashink/decks/<deckId>/` with both
   `cards.jsonl` and `deck-metadata.json` (decks without valid metadata are skipped)
 
 ### "No cards due today"
@@ -347,7 +354,7 @@ firmware/
 
 ### Upload fails
 - Browser page says "CONNECTION FAILED...": your computer/phone dropped off
-  the device hotspot (Anki-X3 / Anki-X4) - rejoin and click UPLOAD DECK again
+  the device hotspot (Flashink-X3 / Flashink-X4) - rejoin and click UPLOAD DECK again
 - "INVALID FILE TYPE. PLEASE USE .APKG": the browser page only accepts
   `.apkg` files; JSONL decks go through the `curl` API instead
 - `400 Missing deckId` / `Invalid deckId`: pass a `deckId` form field of 1-64
@@ -372,6 +379,24 @@ This is a community project for Xteink e-readers. Contributions welcome!
 
 ## Acknowledgments
 
-- Anki - The original spaced repetition software
-- OpenX4 Community SDK - Hardware abstraction layer
-- sql.js - SQLite in JavaScript for browser-side parsing
+Flashink stands on the shoulders of several projects:
+
+- **[crosspoint-anki](https://github.com/DChells/crosspoint-x4-anki)** by
+  DChells - the original Anki-for-CrossPoint app that Flashink grew from
+- **[CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)**
+  by Dave Allie and the CrossPoint community - the e-reader firmware Flashink
+  runs alongside, and the origin of the ported HAL, renderer, and tilt-sensor
+  code (X3 device detection and gesture handling follow its implementation)
+- **[OpenX4 Community SDK](https://github.com/open-x4-epaper/community-sdk)** -
+  display, input, battery, and SD-card drivers for the Xteink hardware,
+  including the X3 panel support
+- **[Anki](https://apps.ankiweb.net/)** by Ankitects - the spaced-repetition
+  software whose `.apkg` deck format Flashink imports (no affiliation)
+- **SM-2** - the SuperMemo 2 scheduling algorithm by Piotr Wozniak
+- **[sql.js](https://github.com/sql-js/sql.js)** and
+  **[JSZip](https://stuk.github.io/jszip/)** - browser-side `.apkg` parsing
+- **[ESPAsyncWebServer](https://github.com/mathieucarbou/ESPAsyncWebServer)**,
+  **[ArduinoJson](https://arduinojson.org/)**, and
+  **[QRCode](https://github.com/ricmoo/QRCode)** - the upload stack
+- Bookerly, Noto Sans, Ubuntu, and OpenDyslexic fonts (bundled via
+  CrossPoint's EpdFont library)

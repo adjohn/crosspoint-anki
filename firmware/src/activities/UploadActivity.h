@@ -18,7 +18,7 @@ private:
     unsigned long lastCountPollMs = 0;
 
     static const int HEADER_HEIGHT = 60;
-    static constexpr const char* AP_PASSWORD = "ankideck123";
+    static constexpr const char* AP_PASSWORD = "flashink123";
     static const unsigned long COUNT_POLL_INTERVAL_MS = 500;
 
     void stopServices();

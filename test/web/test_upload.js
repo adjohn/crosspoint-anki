@@ -51,7 +51,7 @@ function assertEqual(actual, expectedVal, msg) {
 
     console.log('-- loading page');
     await page.goto(`http://127.0.0.1:${port}/upload.html`, { waitUntil: 'load' });
-    assertEqual(await page.title(), 'Anki Deck Upload', 'page title');
+    assertEqual(await page.title(), 'Flashink Deck Upload', 'page title');
     assert(await page.locator('#uploadBtn').isDisabled(), 'upload button disabled before file select');
 
     console.log('-- selecting fixture and uploading');

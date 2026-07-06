@@ -140,7 +140,7 @@ void setup() {
         delay(10);
     }
 
-    Serial.printf("[%lu] Anki %s Starting (version %s)\n", millis(), isX3 ? "X3" : "X4", ANKI_VERSION);
+    Serial.printf("[%lu] Flashink %s Starting (version %s)\n", millis(), isX3 ? "X3" : "X4", FLASHINK_VERSION);
 
     // Initialize SD card
     if (!SdMan.begin()) {
@@ -163,7 +163,7 @@ void setup() {
     mappedInputManager.setTiltSensor(&tiltSensor);
     if (tiltSensor.isAvailable()) {
         Preferences prefs;
-        prefs.begin("anki", true);
+        prefs.begin("flashink", true);
         const bool tiltOn = prefs.getBool("tilt", true);
         prefs.end();
         mappedInputManager.setTiltEnabled(tiltOn);
@@ -183,8 +183,8 @@ void setup() {
     
     // Show boot screen
     renderer.clearScreen();
-    renderer.drawCenteredText(UI_12_FONT_ID, renderer.getScreenHeight() / 2 - 20, isX3 ? "Anki X3" : "Anki X4", true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 20, ANKI_VERSION, true);
+    renderer.drawCenteredText(UI_12_FONT_ID, renderer.getScreenHeight() / 2 - 20, isX3 ? "Flashink X3" : "Flashink X4", true, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 20, FLASHINK_VERSION, true);
     renderer.displayBuffer(HalDisplay::FAST_REFRESH);
     
     delay(500);

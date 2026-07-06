@@ -5,8 +5,8 @@
 #include <SDCardManager.h>
 
 // Static files directory on SD card
-#define WEB_ROOT "/.crosspoint/apps/anki/web"
-#define UPLOAD_TEMP_DIR "/.crosspoint/apps/anki/temp"
+#define WEB_ROOT "/.crosspoint/apps/flashink/web"
+#define UPLOAD_TEMP_DIR "/.crosspoint/apps/flashink/temp"
 
 // Upload limits
 #define MAX_UPLOAD_SIZE (10 * 1024 * 1024)  // 10MB

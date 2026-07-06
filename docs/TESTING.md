@@ -1,6 +1,6 @@
-# Anki Testing Guide
+# Flashink Testing Guide
 
-This document provides comprehensive testing instructions for the Anki flashcard app on CrossPoint devices (Xteink X3 and X4). The same `app.bin` runs on both devices; unless a step says otherwise, run the tests on whichever device you have. X3-specific tests are in [X3-Specific Tests](#x3-specific-tests).
+This document provides comprehensive testing instructions for Flashink, a spaced-repetition flashcard app for CrossPoint devices (Xteink X3 and X4). The same `app.bin` runs on both devices; unless a step says otherwise, run the tests on whichever device you have. X3-specific tests are in [X3-Specific Tests](#x3-specific-tests).
 
 ---
 
@@ -67,10 +67,10 @@ You upload it with `curl` in Test 2 below.
 ### 1. Download the Release
 
 ```
-https://github.com/DChells/crosspoint-x4-anki/releases/tag/v0.1.0
+this repository's Releases page
 ```
 
-Download: `anki-v0.1.0.zip`
+Download: `flashink-v0.1.0.zip`
 
 ### 2. Upload via CrossPoint File Transfer
 
@@ -80,18 +80,18 @@ Download: `anki-v0.1.0.zip`
 | 2.2 | Connect to WiFi (STA) or create hotspot (AP) | IP address displayed on screen |
 | 2.3 | On computer: open the URL shown | CrossPoint web interface loads |
 | 2.4 | Click **Apps** tab | Apps management page opens |
-| 2.5 | Upload `anki-v0.1.0.zip` | Upload progress shown, success message |
+| 2.5 | Upload `flashink-v0.1.0.zip` | Upload progress shown, success message |
 
-**Verify**: App appears in the list with name "Anki"
+**Verify**: App appears in the list with name "Flashink"
 
 ### 3. Install the App
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 3.1 | On the device: Home → Apps | Apps list shows "Anki" |
-| 3.2 | Select "Anki" | App details screen |
+| 3.1 | On the device: Home → Apps | Apps list shows "Flashink" |
+| 3.2 | Select "Flashink" | App details screen |
 | 3.3 | Press Install | Progress indicator, device reboots |
-| 3.4 | Wait for reboot | Anki app main menu appears |
+| 3.4 | Wait for reboot | Flashink main menu appears |
 
 **Checkpoint**: If installation fails, note:
 - Battery level
@@ -106,7 +106,7 @@ Download: `anki-v0.1.0.zip`
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1.1 | App boots | "CrossPoint Anki" header, menu items visible |
+| 1.1 | App boots | "Flashink" header, menu items visible |
 | 1.2 | Observe menu items | X4: "Study", "Upload Decks", "Exit to CrossPoint". X3 adds "Tilt: On" (or "Tilt: Off") between "Upload Decks" and "Exit to CrossPoint" |
 | 1.3 | Press side Up/Down buttons | Highlight bar moves between options |
 
@@ -118,9 +118,9 @@ Download: `anki-v0.1.0.zip`
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 2.1 | Select "Upload Decks" | Instruction screen: network **Anki-X3** (X3) or **Anki-X4** (X4), password **ankideck123**, `http://192.168.4.1` (plus "or http://anki.local" if mDNS started), "Decks uploaded: 0", "Press Back when done", and a QR code on the right captioned "Scan to join WiFi" |
-| 2.2 | On a phone: scan the QR code | Phone joins the Anki-X3/Anki-X4 hotspot without typing the password |
-| 2.3 | On computer: join the hotspot manually and open `http://192.168.4.1` | Upload page ("Upload Anki Deck") loads; `/` redirects to `/upload.html` |
+| 2.1 | Select "Upload Decks" | Instruction screen: network **Flashink-X3** (X3) or **Flashink-X4** (X4), password **flashink123**, `http://192.168.4.1` (plus "or http://flashink.local" if mDNS started), "Decks uploaded: 0", "Press Back when done", and a QR code on the right captioned "Scan to join WiFi" |
+| 2.2 | On a phone: scan the QR code | Phone joins the Flashink-X3/Flashink-X4 hotspot without typing the password |
+| 2.3 | On computer: join the hotspot manually and open `http://192.168.4.1` | Upload page ("Flashink — Upload Deck") loads; `/` redirects to `/upload.html` |
 | 2.4 | Click the dashed area and select a real Anki `.apkg` export | Label changes to "FILE: <name>"; UPLOAD DECK button becomes enabled |
 | 2.5 | Click UPLOAD DECK | Progress bar appears (parsing drives 0-80%, upload the rest); on completion an underlined message: `SUCCESS: DECK "<name>" UPLOADED (N CARDS)` where the name is the `.apkg` file name without extension; button re-enabled |
 | 2.6 | Watch the device screen (updates within ~1 second) | "Decks uploaded: 1" |
@@ -179,7 +179,7 @@ arrive with front/back swapped.
 
 This tests spaced repetition logic. Intervals are not shown on screen; verify
 them in the progress file on the SD card
-(`/.crosspoint/apps/anki/progress/<deckId>.json`). `due` and `lastReview` are
+(`/.crosspoint/apps/flashink/progress/<deckId>.json`). `due` and `lastReview` are
 **days since 1970-01-01 (UTC)**; `due: 0` means "always due" (a rating made
 with no usable clock).
 
@@ -217,7 +217,7 @@ with no usable clock).
 |------|--------|-----------------|
 | 7.1 | From main menu, select "Exit to CrossPoint" | No confirmation prompt; screen shows "Returning to CrossPoint..." |
 | 7.2 | Wait for reboot | CrossPoint main firmware loads |
-| 7.3 | Relaunch Anki, open any screen (e.g. deck list), hold the Back button for ~1.5 seconds | Same "Returning to CrossPoint..." screen and reboot - long-press Back exits from any screen |
+| 7.3 | Relaunch Flashink, open any screen (e.g. deck list), hold the Back button for ~1.5 seconds | Same "Returning to CrossPoint..." screen and reboot - long-press Back exits from any screen |
 
 **Report**:
 - [ ] PASS - Returns to CrossPoint successfully (both paths)
@@ -248,14 +248,14 @@ with no usable clock).
 |------|--------|-----------------|
 | 10.1 | Start review, rate some cards | Progress being made |
 | 10.2 | Power off device mid-session | Device powers off |
-| 10.3 | Power on, return to Anki app, reopen the deck | Ratings made before power-off are in the progress file (progress is saved after every rating). With a working clock (X3, or X4 with the system time set) the already-rated cards are skipped and only the still-due ones are offered; with no clock (X4 after power-off without NTP) every card is offered again - see Test 5.8 |
+| 10.3 | Power on, return to Flashink, reopen the deck | Ratings made before power-off are in the progress file (progress is saved after every rating). With a working clock (X3, or X4 with the system time set) the already-rated cards are skipped and only the still-due ones are offered; with no clock (X4 after power-off without NTP) every card is offered again - see Test 5.8 |
 
 ### Test 11: Multiple Decks
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 11.1 | Upload 3+ decks with different `deckId` values (Test 2 flow) | All appear in the deck list, sorted by name |
-| 11.2 | Study from different decks | Each deck tracks progress independently (one file per deck under `/.crosspoint/apps/anki/progress/`) |
+| 11.2 | Study from different decks | Each deck tracks progress independently (one file per deck under `/.crosspoint/apps/flashink/progress/`) |
 
 ---
 
@@ -294,7 +294,7 @@ Run these on an Xteink X3. One `app.bin` serves both devices; these tests verify
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| X3-1.1 | Boot the app on an X3 | Boot screen shows "Anki X3" (serial log: "Anki X3 Starting") |
+| X3-1.1 | Boot the app on an X3 | Boot screen shows "Flashink X3" (serial log: "Flashink X3 Starting") |
 | X3-1.2 | Reboot the app | Still detected as X3 (detection result is cached in NVS namespace `cphw`, key `dev_det`) |
 
 **Note**: Detection runs an I2C probe on first boot only; later boots read the NVS cache. The NVS key `dev_ovr` in namespace `cphw` (0=auto, 1=force X4, 2=force X3) can override detection for debugging.
@@ -316,7 +316,7 @@ Run these on an Xteink X3. One `app.bin` serves both devices; these tests verify
 | X3-3.4 | Review, answer shown: tilt forward / back | Card rated Good / Again |
 | X3-3.5 | Session complete screen: tilt either way | Nothing happens, no gesture leaks into the next screen |
 | X3-3.6 | Upload Decks screen: tilt either way | Nothing happens, no gesture leaks into the next screen |
-| X3-3.7 | Upload screen SSID | Network name shown is "Anki-X3" (an X4 shows "Anki-X4") |
+| X3-3.7 | Upload screen SSID | Network name shown is "Flashink-X3" (an X4 shows "Flashink-X4") |
 
 ### Test X3-4: Tilt Toggle Persistence
 
@@ -331,7 +331,7 @@ Run these on an Xteink X3. One `app.bin` serves both devices; these tests verify
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| X3-5.1 | Install the same `app.bin` on an X4 | Boot screen shows "Anki X4"; 800x480 rendering unchanged |
+| X3-5.1 | Install the same `app.bin` on an X4 | Boot screen shows "Flashink X4"; 800x480 rendering unchanged |
 | X3-5.2 | Main menu on X4 | No "Tilt" menu item; battery % and USB detection work as before |
 
 ---
@@ -419,7 +419,7 @@ If you find a bug, please report using this format:
 ### Environment
 - Device model: [ ] X3 [ ] X4
 - CrossPoint firmware version: 
-- Anki app version: v0.1.0
+- Flashink version: v0.1.0
 - Deck used: 
 - Battery level: 
 

@@ -1,9 +1,9 @@
 #include "DeckStorage.h"
 #include <ArduinoJson.h>
 
-#define ANKI_BASE_DIR "/.crosspoint/apps/anki"
-#define DECKS_DIR ANKI_BASE_DIR "/decks"
-#define PROGRESS_DIR ANKI_BASE_DIR "/progress"
+#define FLASHINK_BASE_DIR "/.crosspoint/apps/flashink"
+#define DECKS_DIR FLASHINK_BASE_DIR "/decks"
+#define PROGRESS_DIR FLASHINK_BASE_DIR "/progress"
 
 bool CardStream::open(const String& deckId) {
     String path = DeckStorage::getDeckPath(deckId) + "/cards.jsonl";

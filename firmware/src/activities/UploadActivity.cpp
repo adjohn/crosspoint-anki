@@ -14,7 +14,7 @@ static WebServer& uploadServer() {
 }
 
 UploadActivity::UploadActivity(GfxRenderer& renderer, MappedInputManager& input, bool isX3)
-    : Activity("Upload", renderer, input), webServer(uploadServer()), ssid(isX3 ? "Anki-X3" : "Anki-X4") {}
+    : Activity("Upload", renderer, input), webServer(uploadServer()), ssid(isX3 ? "Flashink-X3" : "Flashink-X4") {}
 
 void UploadActivity::onEnter() {
     Activity::onEnter();
@@ -27,8 +27,8 @@ void UploadActivity::onEnter() {
         Serial.printf("[%lu] Upload: AP \"%s\" up at %s\n", millis(), ssid.c_str(),
                       WiFi.softAPIP().toString().c_str());
 
-        // Best effort: http://anki.local as an alias for 192.168.4.1
-        mdnsStarted = MDNS.begin("anki");
+        // Best effort: http://flashink.local as an alias for 192.168.4.1
+        mdnsStarted = MDNS.begin("flashink");
         if (mdnsStarted) {
             MDNS.addService("http", "tcp", 80);
         }
@@ -134,7 +134,7 @@ void UploadActivity::drawScreen() {
     renderer.drawText(1, textX + indent, y, "http://192.168.4.1", true, EpdFontFamily::BOLD);
     if (mdnsStarted) {
         y += lineHeight;
-        renderer.drawText(1, textX + indent, y, "or http://anki.local", true);
+        renderer.drawText(1, textX + indent, y, "or http://flashink.local", true);
     }
     y += lineHeight + 12;
 
