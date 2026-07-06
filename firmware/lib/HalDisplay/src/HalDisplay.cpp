@@ -5,7 +5,22 @@ HalDisplay::HalDisplay() : einkDisplay(EPD_SCLK, EPD_MOSI, EPD_CS, EPD_DC, EPD_R
 
 HalDisplay::~HalDisplay() {}
 
-void HalDisplay::begin() { einkDisplay.begin(); }
+void HalDisplay::begin(const bool isX3) {
+  if (isX3) {
+    einkDisplay.setDisplayX3();
+  }
+  einkDisplay.begin();
+}
+
+uint16_t HalDisplay::getDisplayWidth() const { return einkDisplay.getDisplayWidth(); }
+
+uint16_t HalDisplay::getDisplayHeight() const { return einkDisplay.getDisplayHeight(); }
+
+uint16_t HalDisplay::getDisplayWidthBytes() const { return einkDisplay.getDisplayWidthBytes(); }
+
+uint32_t HalDisplay::getBufferSize() const { return einkDisplay.getBufferSize(); }
+
+void HalDisplay::requestResync(const uint8_t settlePasses) { einkDisplay.requestResync(settlePasses); }
 
 void HalDisplay::clearScreen(uint8_t color) const { einkDisplay.clearScreen(color); }
 

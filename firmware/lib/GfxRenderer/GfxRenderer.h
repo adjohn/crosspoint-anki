@@ -25,9 +25,9 @@ class GfxRenderer {
 
  private:
   static constexpr size_t BW_BUFFER_CHUNK_SIZE = 8000;  // 8KB chunks to allow for non-contiguous memory
-  static constexpr size_t BW_BUFFER_NUM_CHUNKS = HalDisplay::BUFFER_SIZE / BW_BUFFER_CHUNK_SIZE;
-  static_assert(BW_BUFFER_CHUNK_SIZE * BW_BUFFER_NUM_CHUNKS == HalDisplay::BUFFER_SIZE,
-                "BW buffer chunking does not line up with display buffer size");
+  // Sized against the largest supported panel; the runtime buffer size decides how many are used
+  static constexpr size_t BW_BUFFER_NUM_CHUNKS =
+      (EInkDisplay::MAX_BUFFER_SIZE + BW_BUFFER_CHUNK_SIZE - 1) / BW_BUFFER_CHUNK_SIZE;
 
   HalDisplay& display;
   RenderMode renderMode;
@@ -122,7 +122,7 @@ class GfxRenderer {
 
   // Low level functions
   uint8_t* getFrameBuffer() const;
-  static size_t getBufferSize();
+  size_t getBufferSize() const;
   void grayscaleRevert() const;
   void getOrientedViewableTRBL(int* outTop, int* outRight, int* outBottom, int* outLeft) const;
 };
