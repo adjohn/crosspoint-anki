@@ -42,12 +42,10 @@ void DeckListActivity::loop() {
         }
     } else if (input.wasPressed(MappedInputManager::Button::Confirm)) {
         if (!decks.empty()) {
-            Serial.printf("Selected deck: %s\n", decks[selectedIndex].name.c_str());
-            // TODO: Navigate to StudyActivity with selected deck
+            requestNav(NavTarget::Review, decks[selectedIndex].id);
         }
     } else if (input.wasPressed(MappedInputManager::Button::Back)) {
-        // TODO: Navigate back or exit
-        Serial.println("Back pressed");
+        requestNav(NavTarget::MainMenu);
     }
 
     if (needsRedraw) {

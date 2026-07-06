@@ -2,11 +2,12 @@
 #include <GfxRenderer.h>
 #include <MappedInputManager.h>
 #include <Preferences.h>
-#include "DeckListActivity.h"
 
 MainMenuActivity::MainMenuActivity(GfxRenderer& renderer, MappedInputManager& input)
     : Activity("MainMenu", renderer, input), selectedIndex(0), tiltItemIndex(-1) {
     menuItems.push_back("Study");
+    uploadItemIndex = (int)menuItems.size();
+    menuItems.push_back("Upload Decks");
     if (input.tiltAvailable()) {
         // X3 only: the X4 has no tilt sensor
         tiltItemIndex = (int)menuItems.size();
@@ -55,24 +56,14 @@ void MainMenuActivity::loop() {
         }
     } else if (input.wasPressed(MappedInputManager::Button::Confirm)) {
         if (selectedIndex == 0) {
-            // Study
-             Serial.println("Selected Study");
-             // TODO: We need a way to switch activity from within an activity.
-             // For now, we will just print.
-             // Ideally we would return a new Activity* or use a state machine manager.
-             // Since Activity doesn't have a manager reference in the current interface,
-             // we'll assume the main loop handles this or we just print for this task scope.
-             // Wait, the prompt implies "Shows Study option... Confirm to select".
-             // We can't implement full navigation without changing Activity interface or main loop.
-             // I will stick to the requested scope: "Create ... Activity".
-             // Assuming Activity manager logic exists or will be added.
+            requestNav(NavTarget::DeckList);
+        } else if (selectedIndex == uploadItemIndex) {
+            requestNav(NavTarget::Upload);
         } else if (selectedIndex == tiltItemIndex) {
             toggleTilt();
             needsRedraw = true;
         } else if (selectedIndex == exitItemIndex) {
-            // Exit
-            Serial.println("Selected Exit to CrossPoint");
-             // TODO: Implement exit logic
+            requestNav(NavTarget::ExitApp);
         }
     }
 

@@ -24,6 +24,7 @@ public:
     static bool openCardStream(const String& deckId, CardStream& stream);
     static DeckProgress loadProgress(const String& deckId);
     static bool saveProgress(const String& deckId, const DeckProgress& progress);
+    static String getDecksDir();
     static String getDeckPath(const String& deckId);
     static String getProgressPath(const String& deckId);
 };

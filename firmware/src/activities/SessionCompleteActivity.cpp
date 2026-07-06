@@ -16,8 +16,7 @@ void SessionCompleteActivity::loop() {
     input.clearTiltEvents();
 
     if (input.wasPressed(MappedInputManager::Button::Confirm) || input.wasPressed(MappedInputManager::Button::Back)) {
-        // TODO: Return to deck list
-        Serial.println("Returning to deck list");
+        requestNav(NavTarget::DeckList);
     }
 }
 
@@ -27,18 +26,16 @@ void SessionCompleteActivity::drawScreen() {
     int centerX = renderer.getScreenWidth() / 2;
     int centerY = renderer.getScreenHeight() / 2;
     
-    renderer.drawCenteredText(2, centerY - 60, "Session Complete!", false);
-    
+    renderer.drawCenteredText(2, centerY - 60, "Session Complete!", true);
+
     String reviewedStr = "Reviewed: " + String(cardsReviewed);
-    renderer.drawCenteredText(1, centerY - 10, reviewedStr.c_str(), false);
-    
+    renderer.drawCenteredText(1, centerY - 10, reviewedStr.c_str(), true);
+
     String remainingStr = "Remaining: " + String(cardsRemaining);
-    renderer.drawCenteredText(1, centerY + 20, remainingStr.c_str(), false);
-    
+    renderer.drawCenteredText(1, centerY + 20, remainingStr.c_str(), true);
+
     renderer.fillRect(40, centerY + 60, renderer.getScreenWidth() - 80, 40);
-    renderer.drawCenteredText(1, centerY + 70, "Back to Decks", false); // Text on black rect logic depends on renderer impl (usually XOR or white on black)
-    // Assuming renderer handles text color or we need to set it.
-    // Given existing code doesn't show text color setting, we assume default or auto-inversion.
-    
+    renderer.drawCenteredText(1, centerY + 70, "Back to Decks", false); // white text on the black bar
+
     renderer.displayBuffer();
 }

@@ -23,14 +23,15 @@ class HalDisplay {
   static constexpr uint16_t DISPLAY_WIDTH_BYTES = DISPLAY_WIDTH / 8;
   static constexpr uint32_t BUFFER_SIZE = DISPLAY_WIDTH_BYTES * DISPLAY_HEIGHT;
 
-  // Runtime geometry passthrough
-  uint16_t getDisplayWidth() const;
-  uint16_t getDisplayHeight() const;
-  uint16_t getDisplayWidthBytes() const;
-  uint32_t getBufferSize() const;
+  // Runtime geometry passthrough. Inline: these sit on the per-pixel hot
+  // path in GfxRenderer and collapse to member-variable loads.
+  uint16_t getDisplayWidth() const { return einkDisplay.getDisplayWidth(); }
+  uint16_t getDisplayHeight() const { return einkDisplay.getDisplayHeight(); }
+  uint16_t getDisplayWidthBytes() const { return einkDisplay.getDisplayWidthBytes(); }
+  uint32_t getBufferSize() const { return einkDisplay.getBufferSize(); }
 
   // Hint the X3 policy to run a one-shot full resync on next update
-  void requestResync(uint8_t settlePasses = 0);
+  void requestResync(uint8_t settlePasses = 0) { einkDisplay.requestResync(settlePasses); }
 
   void clearScreen(uint8_t color = 0xFF) const;
   void drawImage(const uint8_t* imageData, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
@@ -52,4 +53,5 @@ class HalDisplay {
 
  private:
   EInkDisplay einkDisplay;
+  bool x3 = false;
 };

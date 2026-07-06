@@ -21,6 +21,7 @@ public:
     virtual ~ReviewActivity() = default;
 
     void onEnter() override;
+    void onExit() override;
     void loop() override;
 
 private:
@@ -30,6 +31,8 @@ private:
     Card currentCard;
     DeckProgress deckProgress;
     bool hasMoreCards;
+    int reviewedCount;
+    int totalCards;
 
     void showFront();
     void showBack();

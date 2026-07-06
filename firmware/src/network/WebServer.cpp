@@ -1,5 +1,8 @@
 #include "WebServer.h"
 #include <WiFi.h>
+#include <memory>
+#include "../data/DeckMetadata.h"
+#include "../storage/DeckStorage.h"
 
 WebServer::WebServer(uint16_t port) : server(port) {}
 
@@ -13,7 +16,13 @@ bool WebServer::begin() {
         return false;
     }
     
-    setupRoutes();
+    SdMan.ensureDirectoryExists(UPLOAD_TEMP_DIR);
+    SdMan.ensureDirectoryExists(DeckStorage::getDecksDir().c_str());
+
+    if (!routesConfigured) {
+        setupRoutes();  // server.on() appends; only register handlers once
+        routesConfigured = true;
+    }
     server.begin();
     running = true;
     
@@ -34,9 +43,16 @@ void WebServer::setupRoutes() {
         request->redirect("/upload.html");
     });
     
-    server.on("/upload-deck", HTTP_POST, 
-        [](AsyncWebServerRequest* request) {},
-        [this](AsyncWebServerRequest* request, String filename, size_t index, 
+    server.on("/upload-deck", HTTP_POST,
+        [](AsyncWebServerRequest* request) {
+            // The library never invokes the upload callback for a zero-byte or
+            // missing file part, so nothing responded yet - fail explicitly
+            // instead of leaving the client to hang until timeout.
+            if (request->_tempObject == nullptr) {
+                request->send(400, "application/json", "{\"error\":\"Empty or missing file\"}");
+            }
+        },
+        [this](AsyncWebServerRequest* request, String filename, size_t index,
                uint8_t* data, size_t len, bool final) {
             handleUploadDeck(request, filename, index, data, len, final);
         }
@@ -66,10 +82,17 @@ void WebServer::handleStaticFile(AsyncWebServerRequest* request) {
         return;
     }
 
-    FsFile* file = new FsFile(SdMan.open(fullPath.c_str(), O_RDONLY));
-    if (!file || !(*file) || file->isDirectory()) {
-        if (file && (*file)) file->close();
-        delete file;
+    // shared_ptr with a closing deleter: the copy captured in the fill lambda
+    // lives inside the response, so the file is closed and freed when the
+    // response is destroyed - including client disconnects mid-transfer.
+    std::shared_ptr<FsFile> file(new FsFile(SdMan.open(fullPath.c_str(), O_RDONLY)),
+                                 [](FsFile* f) {
+                                     if (f) {
+                                         if (*f) f->close();
+                                         delete f;
+                                     }
+                                 });
+    if (!(*file) || file->isDirectory()) {
         request->send(404, "text/plain", "File not found");
         return;
     }
@@ -81,13 +104,16 @@ void WebServer::handleStaticFile(AsyncWebServerRequest* request) {
         contentType,
         fileSize,
         [file](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
-            if (!file || !(*file)) return 0;
-            size_t bytesRead = file->read(buffer, maxLen);
-            if (bytesRead == 0 || !file->available()) {
+            if (!(*file)) return 0;
+            int bytesRead = file->read(buffer, maxLen);
+            if (bytesRead <= 0) {
                 file->close();
-                delete file;
+                return 0;
             }
-            return bytesRead;
+            if (!file->available()) {
+                file->close();
+            }
+            return (size_t)bytesRead;
         }
     );
 
@@ -95,109 +121,183 @@ void WebServer::handleStaticFile(AsyncWebServerRequest* request) {
     request->send(response);
 }
 
+void WebServer::sendJson(AsyncWebServerRequest* request, int code, const String& body) {
+    if (request->_tempObject == nullptr) {
+        request->_tempObject = malloc(1);  // "responded" marker, freed by the request
+    }
+    request->send(code, "application/json", body);
+}
+
 void WebServer::handleUploadDeck(AsyncWebServerRequest* request, String filename, size_t index,
                                   uint8_t* data, size_t len, bool final) {
-    static FsFile uploadFile;
-    static size_t totalBytes = 0;
-    static String tempPath;
-    static bool hasError = false;
-    
     if (index == 0) {
-        totalBytes = 0;
-        hasError = false;
-        uploadFile.close();
-        
-        if (!request->hasParam("deckId", true)) {
-            request->send(400, "application/json", "{\"error\":\"Missing deckId parameter\"}");
-            hasError = true;
+        if (activeUpload != nullptr && activeUpload != request) {
+            sendJson(request, 409, "{\"error\":\"Another upload is in progress\"}");
             return;
         }
-        
+        activeUpload = request;
+        uploadTotalBytes = 0;
+        uploadLineCount = 0;
+        uploadLastByte = '\n';
+        uploadHasError = false;
+        uploadFile.close();
+
+        // Release the upload slot (and any partial temp file) if the client
+        // drops mid-upload or after an error.
+        request->onDisconnect([this, request]() {
+            if (activeUpload == request) {
+                if (uploadFile) {
+                    uploadFile.close();
+                    SdMan.remove(uploadTempPath.c_str());
+                }
+                activeUpload = nullptr;
+            }
+        });
+
+        if (!request->hasParam("deckId", true)) {
+            sendJson(request, 400, "{\"error\":\"Missing deckId parameter\"}");
+            uploadHasError = true;
+            return;
+        }
+
         String deckId = request->getParam("deckId", true)->value();
         if (deckId.length() == 0 || deckId.length() > 64) {
-            request->send(400, "application/json", "{\"error\":\"Invalid deckId\"}");
-            hasError = true;
+            sendJson(request, 400, "{\"error\":\"Invalid deckId\"}");
+            uploadHasError = true;
             return;
         }
-        
+
         for (size_t i = 0; i < deckId.length(); i++) {
             char c = deckId[i];
             if (!isalnum(c) && c != '-' && c != '_') {
-                request->send(400, "application/json", "{\"error\":\"Invalid deckId characters\"}");
-                hasError = true;
+                sendJson(request, 400, "{\"error\":\"Invalid deckId characters\"}");
+                uploadHasError = true;
                 return;
             }
         }
-        
+
         SdMan.ensureDirectoryExists(UPLOAD_TEMP_DIR);
-        tempPath = String(UPLOAD_TEMP_DIR) + "/" + deckId + ".jsonl.tmp";
-        
-        if (SdMan.exists(tempPath.c_str())) {
-            SdMan.remove(tempPath.c_str());
+        uploadTempPath = String(UPLOAD_TEMP_DIR) + "/" + deckId + ".jsonl.tmp";
+
+        if (SdMan.exists(uploadTempPath.c_str())) {
+            SdMan.remove(uploadTempPath.c_str());
         }
-        
-        uploadFile = SdMan.open(tempPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC);
+
+        uploadFile = SdMan.open(uploadTempPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC);
         if (!uploadFile) {
-            request->send(500, "application/json", "{\"error\":\"Failed to create upload file\"}");
-            hasError = true;
+            sendJson(request, 500, "{\"error\":\"Failed to create upload file\"}");
+            uploadHasError = true;
             return;
         }
-        
+
         Serial.println("WebServer: Starting upload for deck: " + deckId);
     }
-    
-    if (hasError) {
+
+    if (request != activeUpload || uploadHasError) {
         return;
     }
-    
+
     if (len > 0 && uploadFile) {
-        totalBytes += len;
-        
-        if (totalBytes > MAX_UPLOAD_SIZE) {
+        uploadTotalBytes += len;
+
+        if (uploadTotalBytes > MAX_UPLOAD_SIZE) {
             uploadFile.close();
-            SdMan.remove(tempPath.c_str());
-            request->send(413, "application/json", "{\"error\":\"File too large (max 10MB)\"}");
-            hasError = true;
+            SdMan.remove(uploadTempPath.c_str());
+            sendJson(request, 413, "{\"error\":\"File too large (max 10MB)\"}");
+            uploadHasError = true;
             return;
         }
-        
+
+        for (size_t i = 0; i < len; i++) {
+            if (data[i] == '\n') uploadLineCount++;
+        }
+        uploadLastByte = data[len - 1];
+
         size_t written = uploadFile.write(data, len);
         if (written != len) {
             uploadFile.close();
-            SdMan.remove(tempPath.c_str());
-            request->send(500, "application/json", "{\"error\":\"Write failed\"}");
-            hasError = true;
+            SdMan.remove(uploadTempPath.c_str());
+            sendJson(request, 500, "{\"error\":\"Write failed\"}");
+            uploadHasError = true;
             return;
         }
     }
-    
+
     if (final) {
         uploadFile.close();
-        
-        if (hasError) {
+        activeUpload = nullptr;
+
+        String deckId = request->getParam("deckId", true)->value();
+        // Final layout must match DeckStorage: <decks>/<deckId>/cards.jsonl
+        // plus <decks>/<deckId>/deck-metadata.json (listDecks skips decks
+        // whose metadata is missing or has an empty id).
+        String deckDir = DeckStorage::getDeckPath(deckId);
+        String finalPath = deckDir + "/cards.jsonl";
+
+        if (!SdMan.ensureDirectoryExists(deckDir.c_str())) {
+            SdMan.remove(uploadTempPath.c_str());
+            sendJson(request, 500, "{\"error\":\"Failed to create deck directory\"}");
             return;
         }
-        
-        String deckId = request->getParam("deckId", true)->value();
-        String deckDir = String("/.crosspoint/apps/anki/decks/") + deckId;
-        String finalPath = deckDir + "/cards.jsonl";
-        
-        SdMan.ensureDirectoryExists(deckDir.c_str());
-        
+
         if (SdMan.exists(finalPath.c_str())) {
             SdMan.remove(finalPath.c_str());
         }
-        
-        if (!SdMan.rename(tempPath.c_str(), finalPath.c_str())) {
-            SdMan.remove(tempPath.c_str());
-            request->send(500, "application/json", "{\"error\":\"Failed to finalize upload\"}");
+
+        if (!SdMan.rename(uploadTempPath.c_str(), finalPath.c_str())) {
+            SdMan.remove(uploadTempPath.c_str());
+            sendJson(request, 500, "{\"error\":\"Failed to finalize upload\"}");
             return;
         }
-        
-        Serial.println("WebServer: Upload complete for deck: " + deckId + " (" + String(totalBytes) + " bytes)");
-        
-        String response = "{\"success\":true,\"bytes\":" + String(totalBytes) + ",\"deckId\":\"" + deckId + "\"}";
-        request->send(200, "application/json", response);
+
+        if (uploadTotalBytes > 0 && uploadLastByte != '\n') {
+            uploadLineCount++;  // last line without trailing newline
+        }
+
+        DeckMetadata meta;
+        meta.id = deckId;
+        meta.name = deckId;
+        if (request->hasParam("name", true)) {
+            String name = request->getParam("name", true)->value();
+            name.trim();
+            if (!name.isEmpty() && name.length() <= 128) {
+                meta.name = name;
+            }
+        }
+        meta.cardCount = (int)uploadLineCount;
+        if (request->hasParam("cardCount", true)) {
+            int count = request->getParam("cardCount", true)->value().toInt();
+            if (count > 0) {
+                meta.cardCount = count;
+            }
+        }
+        meta.filePath = finalPath;
+
+        // Write metadata atomically (like DeckStorage::saveProgress); on
+        // failure keep the freshly installed cards.jsonl - the data is valid
+        // and deleting it would destroy a previously working deck.
+        String metaPath = deckDir + "/deck-metadata.json";
+        String metaTmpPath = metaPath + ".tmp";
+        bool metaOk = SdMan.writeFile(metaTmpPath.c_str(), meta.toJson());
+        if (metaOk) {
+            if (SdMan.exists(metaPath.c_str())) {
+                SdMan.remove(metaPath.c_str());
+            }
+            metaOk = SdMan.rename(metaTmpPath.c_str(), metaPath.c_str());
+        }
+        if (!metaOk) {
+            SdMan.remove(metaTmpPath.c_str());
+            sendJson(request, 500, "{\"error\":\"Failed to write deck metadata\"}");
+            return;
+        }
+
+        uploadCount = uploadCount + 1;
+        Serial.println("WebServer: Upload complete for deck: " + deckId + " (" + String(uploadTotalBytes) +
+                       " bytes, " + String(meta.cardCount) + " cards)");
+
+        String response = "{\"success\":true,\"bytes\":" + String(uploadTotalBytes) + ",\"cards\":" +
+                          String(meta.cardCount) + ",\"deckId\":\"" + deckId + "\"}";
+        sendJson(request, 200, response);
     }
 }
 

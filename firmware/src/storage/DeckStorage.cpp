@@ -118,6 +118,10 @@ bool DeckStorage::saveProgress(const String& deckId, const DeckProgress& progres
     return SdMan.rename(tmpPath.c_str(), path.c_str());
 }
 
+String DeckStorage::getDecksDir() {
+    return String(DECKS_DIR);
+}
+
 String DeckStorage::getDeckPath(const String& deckId) {
     return String(DECKS_DIR) + "/" + deckId;
 }

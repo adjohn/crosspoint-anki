@@ -8,7 +8,11 @@
 #include <builtinFonts/all.h>
 
 #include "MappedInputManager.h"
+#include "activities/DeckListActivity.h"
 #include "activities/MainMenuActivity.h"
+#include "activities/ReviewActivity.h"
+#include "activities/SessionCompleteActivity.h"
+#include "activities/UploadActivity.h"
 #include "utils/BootUtils.h"
 #include "fontIds.h"
 
@@ -39,6 +43,8 @@ EpdFontFamily smallFontFamily(&smallFont);
 
 // Power button hold duration for sleep (ms)
 static constexpr unsigned long POWER_BUTTON_DURATION = 1000;
+// Back button hold duration for exit to CrossPoint (ms)
+static constexpr unsigned long BACK_BUTTON_EXIT_DURATION = 1200;
 // Auto-sleep timeout (ms) - 5 minutes
 static constexpr unsigned long SLEEP_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -68,6 +74,47 @@ void enterDeepSleep() {
     tiltSensor.deepSleep();
     display.deepSleep();
     gpio.startDeepSleep();
+}
+
+void exitToCrossPoint() {
+    Serial.printf("[%lu] Returning to CrossPoint...\n", millis());
+
+    renderer.clearScreen();
+    renderer.drawCenteredText(UI_12_FONT_ID, renderer.getScreenHeight() / 2, "Returning to CrossPoint...", true);
+    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+
+    CrossPoint::returnToCrossPoint();
+}
+
+void handleNavRequest(const Activity::NavRequest& nav) {
+    switch (nav.target) {
+        case Activity::NavTarget::MainMenu:
+            exitActivity();
+            enterNewActivity(new MainMenuActivity(renderer, mappedInputManager));
+            break;
+        case Activity::NavTarget::DeckList:
+            exitActivity();
+            enterNewActivity(new DeckListActivity(renderer, mappedInputManager));
+            break;
+        case Activity::NavTarget::Review:
+            exitActivity();
+            enterNewActivity(new ReviewActivity(nav.deckId, renderer, mappedInputManager));
+            break;
+        case Activity::NavTarget::SessionComplete:
+            exitActivity();
+            enterNewActivity(new SessionCompleteActivity(renderer, mappedInputManager, nav.reviewed, nav.remaining));
+            break;
+        case Activity::NavTarget::Upload:
+            exitActivity();
+            enterNewActivity(new UploadActivity(renderer, mappedInputManager, gpio.deviceIsX3()));
+            break;
+        case Activity::NavTarget::ExitApp:
+            exitActivity();
+            exitToCrossPoint();
+            break;
+        case Activity::NavTarget::None:
+            break;
+    }
 }
 
 void showError(const char* message) {
@@ -124,6 +171,10 @@ void setup() {
     renderer.insertFont(BOOKERLY_14_FONT_ID, bookerly14FontFamily);
     renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
     renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
+    // Activities draw with small literal font IDs; alias them to real families
+    renderer.insertFont(1, ui12FontFamily);
+    renderer.insertFont(2, bookerly14FontFamily);
+    renderer.insertFont(4, bookerly14FontFamily);
     Serial.printf("[%lu] Fonts loaded\n", millis());
     
     // Show boot screen
@@ -158,11 +209,13 @@ void loop() {
         lastMemPrint = millis();
     }
     
-    // Check for user activity
-    if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || tiltSensor.hadActivity()) {
+    // Check for user activity; keep-awake activities (e.g. the upload
+    // server) also reset the timer so the AP isn't killed mid-upload
+    if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || tiltSensor.hadActivity() ||
+        (currentActivity && currentActivity->keepAwake())) {
         lastActivityTime = millis();
     }
-    
+
     // Auto-sleep after timeout
     if (millis() - lastActivityTime >= SLEEP_TIMEOUT_MS) {
         Serial.printf("[%lu] Auto-sleep triggered\n", millis());
@@ -175,12 +228,36 @@ void loop() {
         enterDeepSleep();
         return;
     }
-    
-    // Run current activity
+
+    // Back button long press -> exit to CrossPoint. The hold is tracked from
+    // Back's own press edge (getHeldTime() is not per-button: it measures from
+    // the first button pressed while any button is down, so a Back tap during
+    // another button's hold would misfire). The short-press edge is still
+    // consumed by the activity when the hold begins, and returnToCrossPoint()
+    // restarts so nothing else runs after this fires.
+    static unsigned long backHoldStart = 0;
+    if (mappedInputManager.isPressed(MappedInputManager::Button::Back)) {
+        if (mappedInputManager.wasPressed(MappedInputManager::Button::Back)) {
+            backHoldStart = millis();
+        }
+        if (backHoldStart != 0 && millis() - backHoldStart >= BACK_BUTTON_EXIT_DURATION) {
+            exitActivity();
+            exitToCrossPoint();
+            return;
+        }
+    } else {
+        backHoldStart = 0;
+    }
+
+    // Run current activity, then apply any navigation it requested
     if (currentActivity) {
         currentActivity->loop();
+        const Activity::NavRequest nav = currentActivity->consumeNavRequest();
+        if (nav.target != Activity::NavTarget::None) {
+            handleNavRequest(nav);
+        }
     }
-    
+
     // Small delay to prevent tight spinning
     delay(10);
 }

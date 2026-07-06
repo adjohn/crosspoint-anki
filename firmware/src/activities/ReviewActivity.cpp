@@ -8,18 +8,21 @@
 #define FONT_SMALL 1
 
 ReviewActivity::ReviewActivity(String deckId, GfxRenderer& renderer, MappedInputManager& input)
-    : Activity("Review", renderer, input), 
-      deckId(deckId), 
+    : Activity("Review", renderer, input),
+      deckId(deckId),
       currentState(SHOWING_FRONT),
-      hasMoreCards(true) {
+      hasMoreCards(true),
+      reviewedCount(0),
+      totalCards(0) {
 }
 
 void ReviewActivity::onEnter() {
     Activity::onEnter();
-    
+
     // Load progress and open stream
     deckProgress = DeckStorage::loadProgress(deckId);
-    
+    totalCards = DeckStorage::loadDeckMetadata(deckId).cardCount;
+
     if (DeckStorage::openCardStream(deckId, cardStream)) {
         // Get first card
         if (cardStream.hasNext()) {
@@ -37,6 +40,16 @@ void ReviewActivity::onEnter() {
     }
 }
 
+void ReviewActivity::onExit() {
+    // Each rating is saved as it happens; save again here so the exit
+    // path persists progress even if that ever changes.
+    if (reviewedCount > 0) {
+        DeckStorage::saveProgress(deckId, deckProgress);
+    }
+    cardStream.close();
+    Activity::onExit();
+}
+
 void ReviewActivity::loop() {
     // Tilt gestures are consume-on-read: read once per frame.
     // Reading them here also discards them in states that ignore tilt (FINISHED).
@@ -47,9 +60,7 @@ void ReviewActivity::loop() {
     if (currentState == FINISHED) {
         if (input.wasPressed(MappedInputManager::Button::Back) ||
             input.wasPressed(MappedInputManager::Button::Confirm)) {
-            // Signal to go back (how this is handled depends on the ActivityManager,
-            // but usually popping the activity is done by the manager when we're done)
-            // For now, we just stay here or could implement a request to exit
+            requestNav(NavTarget::DeckList);
         }
         return;
     }
@@ -58,18 +69,22 @@ void ReviewActivity::loop() {
         if (input.wasPressed(MappedInputManager::Button::Confirm) || tiltForward) {
             showBack();  // Tilt forward reveals the answer
         } else if (input.wasPressed(MappedInputManager::Button::Back)) {
-            // Handle back if needed, or let main loop handle it to exit activity
+            requestNav(NavTarget::DeckList);
         }
     } else if (currentState == SHOWING_BACK) {
         if (input.wasPressed(MappedInputManager::Button::Confirm)) {
             showRating();
+        } else if (input.wasPressed(MappedInputManager::Button::Back)) {
+            requestNav(NavTarget::DeckList);
         } else if (tiltForward) {
              processRating(SM2::GOOD);  // Tilt forward rates Good
         } else if (tiltBack) {
              processRating(SM2::AGAIN); // Tilt back rates Again
         }
     } else if (currentState == RATING) {
-        if (input.wasPressed(MappedInputManager::Button::Left)) {
+        if (input.wasPressed(MappedInputManager::Button::Back)) {
+             requestNav(NavTarget::DeckList);
+        } else if (input.wasPressed(MappedInputManager::Button::Left)) {
              processRating(SM2::AGAIN); // Map Left to Again
         } else if (input.wasPressed(MappedInputManager::Button::Down)) {
              processRating(SM2::HARD);  // Map Down to Hard
@@ -177,14 +192,19 @@ void ReviewActivity::processRating(SM2::Quality quality) {
     // Save progress
     // In a real app, we might batch save or save on exit, but safety first
     DeckStorage::saveProgress(deckId, deckProgress);
-    
+
+    reviewedCount++;
+
     // Move to next card
     if (cardStream.hasNext()) {
         currentCard = cardStream.readNext();
         showFront();
     } else {
+        // Session over: go straight to the summary screen
         hasMoreCards = false;
-        showFinished();
+        int remaining = totalCards - reviewedCount;
+        if (remaining < 0) remaining = 0;
+        requestNav(NavTarget::SessionComplete, deckId, reviewedCount, remaining);
     }
 }
 
