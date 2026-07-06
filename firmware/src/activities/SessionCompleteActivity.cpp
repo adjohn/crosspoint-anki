@@ -11,6 +11,10 @@ void SessionCompleteActivity::onEnter() {
 }
 
 void SessionCompleteActivity::loop() {
+    // Tilt is intentionally ignored here; discard gestures so an accidental
+    // flick neither acts on this screen nor leaks into the next activity.
+    input.clearTiltEvents();
+
     if (input.wasPressed(MappedInputManager::Button::Confirm) || input.wasPressed(MappedInputManager::Button::Back)) {
         // TODO: Return to deck list
         Serial.println("Returning to deck list");

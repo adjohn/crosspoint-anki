@@ -20,7 +20,11 @@ void DeckListActivity::onEnter() {
 void DeckListActivity::loop() {
     bool needsRedraw = false;
 
-    if (input.wasPressed(MappedInputManager::Button::Down)) {
+    // Tilt gestures are consume-on-read: read once per frame
+    const bool tiltForward = input.wasTiltedForward();
+    const bool tiltBack = input.wasTiltedBack();
+
+    if (input.wasPressed(MappedInputManager::Button::Down) || tiltForward) {
         if (selectedIndex < (int)decks.size() - 1) {
             selectedIndex++;
             if (selectedIndex >= scrollOffset + ITEMS_PER_PAGE) {
@@ -28,7 +32,7 @@ void DeckListActivity::loop() {
             }
             needsRedraw = true;
         }
-    } else if (input.wasPressed(MappedInputManager::Button::Up)) {
+    } else if (input.wasPressed(MappedInputManager::Button::Up) || tiltBack) {
         if (selectedIndex > 0) {
             selectedIndex--;
             if (selectedIndex < scrollOffset) {

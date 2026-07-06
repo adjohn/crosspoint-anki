@@ -38,11 +38,16 @@ void ReviewActivity::onEnter() {
 }
 
 void ReviewActivity::loop() {
+    // Tilt gestures are consume-on-read: read once per frame.
+    // Reading them here also discards them in states that ignore tilt (FINISHED).
+    const bool tiltForward = input.wasTiltedForward();
+    const bool tiltBack = input.wasTiltedBack();
+
     // Handle input based on state
     if (currentState == FINISHED) {
-        if (input.wasPressed(MappedInputManager::Button::Back) || 
+        if (input.wasPressed(MappedInputManager::Button::Back) ||
             input.wasPressed(MappedInputManager::Button::Confirm)) {
-            // Signal to go back (how this is handled depends on the ActivityManager, 
+            // Signal to go back (how this is handled depends on the ActivityManager,
             // but usually popping the activity is done by the manager when we're done)
             // For now, we just stay here or could implement a request to exit
         }
@@ -50,14 +55,18 @@ void ReviewActivity::loop() {
     }
 
     if (currentState == SHOWING_FRONT) {
-        if (input.wasPressed(MappedInputManager::Button::Confirm)) {
-            showBack();
+        if (input.wasPressed(MappedInputManager::Button::Confirm) || tiltForward) {
+            showBack();  // Tilt forward reveals the answer
         } else if (input.wasPressed(MappedInputManager::Button::Back)) {
             // Handle back if needed, or let main loop handle it to exit activity
         }
     } else if (currentState == SHOWING_BACK) {
         if (input.wasPressed(MappedInputManager::Button::Confirm)) {
             showRating();
+        } else if (tiltForward) {
+             processRating(SM2::GOOD);  // Tilt forward rates Good
+        } else if (tiltBack) {
+             processRating(SM2::AGAIN); // Tilt back rates Again
         }
     } else if (currentState == RATING) {
         if (input.wasPressed(MappedInputManager::Button::Left)) {
@@ -68,6 +77,10 @@ void ReviewActivity::loop() {
              processRating(SM2::GOOD);  // Map Up to Good
         } else if (input.wasPressed(MappedInputManager::Button::Right)) {
              processRating(SM2::EASY);  // Map Right to Easy
+        } else if (tiltForward) {
+             processRating(SM2::GOOD);  // Tilt forward rates Good
+        } else if (tiltBack) {
+             processRating(SM2::AGAIN); // Tilt back rates Again
         }
     }
 }

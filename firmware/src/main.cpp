@@ -2,6 +2,8 @@
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
 #include <HalGPIO.h>
+#include <HalTiltSensor.h>
+#include <Preferences.h>
 #include <SDCardManager.h>
 #include <builtinFonts/all.h>
 
@@ -13,6 +15,7 @@
 // Hardware
 HalDisplay display;
 HalGPIO gpio;
+HalTiltSensor tiltSensor;
 MappedInputManager mappedInputManager(gpio);
 GfxRenderer renderer(display);
 
@@ -48,18 +51,21 @@ void exitActivity() {
 }
 
 void enterNewActivity(Activity* activity) {
+    // Drop tilt gestures queued during the previous activity
+    mappedInputManager.clearTiltEvents();
     currentActivity = activity;
     currentActivity->onEnter();
 }
 
 void enterDeepSleep() {
     Serial.printf("[%lu] Entering deep sleep...\n", millis());
-    
+
     // Clear screen before sleep
     renderer.clearScreen();
     renderer.drawCenteredText(UI_12_FONT_ID, renderer.getScreenHeight() / 2, "Sleeping...", true);
     renderer.displayBuffer(HalDisplay::FAST_REFRESH);
-    
+
+    tiltSensor.deepSleep();
     display.deepSleep();
     gpio.startDeepSleep();
 }
@@ -72,22 +78,23 @@ void showError(const char* message) {
 }
 
 void setup() {
-    // Initialize GPIO first
+    // Initialize GPIO first (runs X4/X3 device detection)
     gpio.begin();
-    
+    const bool isX3 = gpio.deviceIsX3();
+
     // Start serial if USB connected
     Serial.begin(115200);
     unsigned long start = millis();
     while (!Serial && (millis() - start) < 2000) {
         delay(10);
     }
-    
-    Serial.printf("[%lu] Anki X4 Starting (version %s)\n", millis(), ANKI_VERSION);
-    
+
+    Serial.printf("[%lu] Anki %s Starting (version %s)\n", millis(), isX3 ? "X3" : "X4", ANKI_VERSION);
+
     // Initialize SD card
     if (!SdMan.begin()) {
         Serial.printf("[%lu] SD card initialization failed!\n", millis());
-        display.begin();
+        display.begin(isX3);
         renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
         showError("SD card error");
         delay(3000);
@@ -95,11 +102,24 @@ void setup() {
         return;
     }
     Serial.printf("[%lu] SD card initialized\n", millis());
-    
+
     // Initialize display
-    display.begin();
+    display.begin(isX3);
     Serial.printf("[%lu] Display initialized\n", millis());
-    
+
+    // Tilt input (X3 only; no-op on X4)
+    tiltSensor.begin(gpio);
+    mappedInputManager.setTiltSensor(&tiltSensor);
+    if (tiltSensor.isAvailable()) {
+        Preferences prefs;
+        prefs.begin("anki", true);
+        const bool tiltOn = prefs.getBool("tilt", true);
+        prefs.end();
+        mappedInputManager.setTiltEnabled(tiltOn);
+        tiltSensor.update(tiltOn);  // Kick the wake/sleep state machine so the gyro comes up enabled
+        Serial.printf("[%lu] Tilt input %s\n", millis(), tiltOn ? "enabled" : "disabled");
+    }
+
     // Setup fonts
     renderer.insertFont(BOOKERLY_14_FONT_ID, bookerly14FontFamily);
     renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
@@ -108,7 +128,7 @@ void setup() {
     
     // Show boot screen
     renderer.clearScreen();
-    renderer.drawCenteredText(UI_12_FONT_ID, renderer.getScreenHeight() / 2 - 20, "Anki X4", true, EpdFontFamily::BOLD);
+    renderer.drawCenteredText(UI_12_FONT_ID, renderer.getScreenHeight() / 2 - 20, isX3 ? "Anki X3" : "Anki X4", true, EpdFontFamily::BOLD);
     renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() / 2 + 20, ANKI_VERSION, true);
     renderer.displayBuffer(HalDisplay::FAST_REFRESH);
     
@@ -127,7 +147,10 @@ void loop() {
     
     // Update button states
     gpio.update();
-    
+
+    // Poll tilt gestures (no-op on X4; sleeps the gyro while tilt is toggled off)
+    tiltSensor.update(mappedInputManager.isTiltEnabled());
+
     // Memory logging (every 10 seconds)
     if (Serial && millis() - lastMemPrint >= 10000) {
         Serial.printf("[%lu] [MEM] Free: %d bytes, Min Free: %d bytes\n", 
@@ -136,7 +159,7 @@ void loop() {
     }
     
     // Check for user activity
-    if (gpio.wasAnyPressed() || gpio.wasAnyReleased()) {
+    if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || tiltSensor.hadActivity()) {
         lastActivityTime = millis();
     }
     

@@ -1,6 +1,6 @@
-# Anki X4 - Flashcard App for CrossPoint E-Reader
+# Anki - Flashcard App for CrossPoint E-Readers (Xteink X3 & X4)
 
-A standalone Anki flashcard review app for the Xteink X4 e-ink e-reader. Study your Anki decks with SM-2 spaced repetition directly on the device.
+A standalone Anki flashcard review app for Xteink e-ink e-readers. Study your Anki decks with SM-2 spaced repetition directly on the device.
 
 ## Features
 
@@ -8,15 +8,28 @@ A standalone Anki flashcard review app for the Xteink X4 e-ink e-reader. Study y
 - **SM-2 spaced repetition** algorithm for optimal learning
 - **Multi-deck support** - browse and select from multiple decks
 - **Offline capable** - works without internet after initial setup
-- **E-ink optimized** - UI designed for 800x480 e-ink display
+- **E-ink optimized** - UI designed for e-ink displays
+- **Runs on X3 and X4** - single binary, automatic device detection at boot
+- **Tilt gestures on X3** - navigate and rate cards by tilting the device
 - **Progress persistence** - review state saved to SD card
 - **Return to CrossPoint** - clean exit back to main launcher
+
+## Supported Hardware
+
+| Device | Display | Extras |
+|--------|---------|--------|
+| Xteink X4 | 800x480 e-ink | - |
+| Xteink X3 | 792x528 e-ink | Tilt gestures (gyro), fuel-gauge battery reporting |
+
+The same `app.bin` runs on both devices. At boot the app detects the hardware
+automatically (I2C fingerprint probe, cached in NVS) and configures the display
+and inputs accordingly - no separate builds or configuration needed.
 
 ## Installation
 
 ### Prerequisites
 
-- Xteink X4 e-reader with CrossPoint firmware
+- Xteink X3 or X4 e-reader with CrossPoint firmware
 - MicroSD card (8GB+ recommended)
 - WiFi network for initial setup
 
@@ -47,7 +60,7 @@ A standalone Anki flashcard review app for the Xteink X4 e-ink e-reader. Study y
          └── jszip.min.js
    ```
 
-4. Insert SD card into X4 and power on
+4. Insert SD card into the device and power on
 
 5. Launch Anki from CrossPoint Apps menu
 
@@ -56,11 +69,11 @@ A standalone Anki flashcard review app for the Xteink X4 e-ink e-reader. Study y
 ### Uploading Decks
 
 1. **Connect to device WiFi**:
-   - The X4 creates a WiFi AP when Anki app starts
-   - Default: `Anki-X4` / password: `ankix4deck`
+   - The device creates a WiFi AP when the Anki app starts
+   - The AP name and hostname include "Anki" (see the device screen for the exact name and password)
 
 2. **Open browser** and navigate to:
-   - `http://192.168.4.1` or `http://anki-x4.local`
+   - `http://192.168.4.1` (or the address shown on the device)
 
 3. **Upload .apkg file**:
    - Select your Anki deck (.apkg file)
@@ -89,6 +102,22 @@ A standalone Anki flashcard review app for the Xteink X4 e-ink e-reader. Study y
 | **Confirm** | Select / Reveal answer |
 | **Back** | Go back / Exit menu |
 | **Long-press Back** | Exit to CrossPoint |
+
+#### Tilt Gestures (X3 only)
+
+The X3's built-in gyro enables hands-free-ish control. Gestures can be turned
+on/off via the **Tilt: On/Off** item in the main menu (the setting persists
+across reboots; default is on). The menu item only appears on an X3.
+
+| Screen | Tilt forward | Tilt back |
+|--------|--------------|-----------|
+| Main menu / deck list | Selection down | Selection up |
+| Review - question shown | Reveal answer | (ignored) |
+| Review - answer/rating shown | Rate **Good** | Rate **Again** |
+| Session complete | (ignored) | (ignored) |
+
+Tilt gestures also count as activity for the auto-sleep timer. Buttons always
+work regardless of the tilt setting.
 
 ## Deck Format
 
@@ -122,8 +151,15 @@ progress.json:
 ## Technical Specifications
 
 ### Hardware Requirements
-- **Device**: Xteink X4 (ESP32-C3)
-- **Display**: 800x480 e-ink
+
+| | Xteink X4 | Xteink X3 |
+|---|---|---|
+| **SoC** | ESP32-C3 | ESP32-C3 |
+| **Display** | 800x480 e-ink | 792x528 e-ink |
+| **Battery reporting** | Analog (ADC) | BQ27220 fuel gauge (I2C) |
+| **Tilt sensor** | - | QMI8658 gyro (I2C) |
+
+- **Device detection**: automatic at boot (I2C fingerprint probe, result cached in NVS namespace `cphw`)
 - **RAM**: 400KB (app uses ~20KB)
 - **Storage**: SD card for decks
 
@@ -193,7 +229,7 @@ MIT License - See LICENSE file
 
 ## Contributing
 
-This is a community project for the Xteink X4. Contributions welcome!
+This is a community project for Xteink e-readers. Contributions welcome!
 
 ## Acknowledgments
 

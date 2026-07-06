@@ -1,8 +1,8 @@
 {
   "id": "anki",
-  "name": "Anki X4",
+  "name": "Anki",
   "version": "0.1.0",
-  "description": "Anki flashcards for CrossPoint X4",
+  "description": "Anki flashcards for CrossPoint on Xteink X3 and X4",
   "author": "DChells",
   "minFirmware": "0.16.0"
 }

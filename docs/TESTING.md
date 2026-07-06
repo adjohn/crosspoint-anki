@@ -1,12 +1,12 @@
-# Anki X4 Testing Guide
+# Anki Testing Guide
 
-This document provides comprehensive testing instructions for the Anki flashcard app on CrossPoint X4.
+This document provides comprehensive testing instructions for the Anki flashcard app on CrossPoint devices (Xteink X3 and X4). The same `app.bin` runs on both devices; unless a step says otherwise, run the tests on whichever device you have. X3-specific tests are in [X3-Specific Tests](#x3-specific-tests).
 
 ---
 
 ## Prerequisites
 
-- CrossPoint X4 device with firmware 0.16.0+ (PR #679 app extension support)
+- Xteink X3 or X4 device with CrossPoint firmware 0.16.0+ (PR #679 app extension support)
 - WiFi network accessible from both device and computer
 - Sample Anki deck (.apkg file) - see [Test Decks](#test-decks) below
 - Battery > 20% (required for app installation)
@@ -49,20 +49,20 @@ Download: `anki-v0.1.0.zip`
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 2.1 | On X4: Home → File Transfer | File Transfer screen appears |
+| 2.1 | On the device: Home → File Transfer | File Transfer screen appears |
 | 2.2 | Connect to WiFi (STA) or create hotspot (AP) | IP address displayed on screen |
 | 2.3 | On computer: open the URL shown | CrossPoint web interface loads |
 | 2.4 | Click **Apps** tab | Apps management page opens |
 | 2.5 | Upload `anki-v0.1.0.zip` | Upload progress shown, success message |
 
-**Verify**: App appears in the list with name "Anki X4"
+**Verify**: App appears in the list with name "Anki"
 
 ### 3. Install the App
 
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 3.1 | On X4: Home → Apps | Apps list shows "Anki X4" |
-| 3.2 | Select "Anki X4" | App details screen |
+| 3.1 | On the device: Home → Apps | Apps list shows "Anki" |
+| 3.2 | Select "Anki" | App details screen |
 | 3.3 | Press Install | Progress indicator, device reboots |
 | 3.4 | Wait for reboot | Anki app main menu appears |
 
@@ -230,6 +230,54 @@ This tests spaced repetition logic.
 
 ---
 
+## X3-Specific Tests
+
+Run these on an Xteink X3. One `app.bin` serves both devices; these tests verify the X3 code paths.
+
+### Test X3-1: Automatic Device Detection
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| X3-1.1 | Boot the app on an X3 | Boot screen shows "Anki X3" (serial log: "Anki X3 Starting") |
+| X3-1.2 | Reboot the app | Still detected as X3 (detection result is cached in NVS namespace `cphw`, key `dev_det`) |
+
+**Note**: Detection runs an I2C probe on first boot only; later boots read the NVS cache. The NVS key `dev_ovr` in namespace `cphw` (0=auto, 1=force X4, 2=force X3) can override detection for debugging.
+
+### Test X3-2: 792x528 Rendering
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| X3-2.1 | Navigate all screens (menu, deck list, review, session complete) | Content fills the panel; nothing cropped at the right or bottom edge |
+| X3-2.2 | Observe header/selection bars | Full-width, no artifacts in the rightmost columns or bottom rows |
+
+### Test X3-3: Tilt Gestures
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| X3-3.1 | Main menu: tilt forward / back | Selection moves down / up |
+| X3-3.2 | Deck list: tilt forward / back | Selection moves down / up |
+| X3-3.3 | Review, question shown: tilt forward | Answer revealed (tilt back does nothing) |
+| X3-3.4 | Review, answer shown: tilt forward / back | Card rated Good / Again |
+| X3-3.5 | Session complete screen: tilt either way | Nothing happens, no gesture leaks into the next screen |
+
+### Test X3-4: Tilt Toggle Persistence
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| X3-4.1 | Main menu shows "Tilt: On" item (between Study and Exit) | Item present on X3 only |
+| X3-4.2 | Confirm on it | Label flips to "Tilt: Off"; tilt gestures stop working |
+| X3-4.3 | Reboot the app | Still "Tilt: Off" (persisted to NVS); buttons unaffected |
+| X3-4.4 | Toggle back to "Tilt: On" | Gestures work again |
+
+### Test X3-5: X4 Regression Check
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| X3-5.1 | Install the same `app.bin` on an X4 | Boot screen shows "Anki X4"; 800x480 rendering unchanged |
+| X3-5.2 | Main menu on X4 | No "Tilt" menu item; battery % and USB detection work as before |
+
+---
+
 ## Performance Tests
 
 ### Test 14: Upload Performance
@@ -309,6 +357,7 @@ If you find a bug, please report using this format:
 [What actually happens]
 
 ### Environment
+- Device model: [ ] X3 [ ] X4
 - CrossPoint firmware version: 
 - Anki app version: v0.1.0
 - Deck used: 
@@ -346,6 +395,11 @@ If you find a bug, please report using this format:
 | 11. Multiple Decks | [ ] Pass [ ] Fail | |
 | 12. Invalid File | [ ] Pass [ ] Fail | |
 | 13. WiFi Disconnect | [ ] Pass [ ] Fail | |
+| X3-1. Device Detection | [ ] Pass [ ] Fail [ ] N/A | |
+| X3-2. 792x528 Rendering | [ ] Pass [ ] Fail [ ] N/A | |
+| X3-3. Tilt Gestures | [ ] Pass [ ] Fail [ ] N/A | |
+| X3-4. Tilt Persistence | [ ] Pass [ ] Fail [ ] N/A | |
+| X3-5. X4 Regression | [ ] Pass [ ] Fail [ ] N/A | |
 
 ### Overall Assessment
 
