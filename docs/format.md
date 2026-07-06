@@ -94,7 +94,7 @@ Line-delimited JSON format. Each line is a valid JSON object representing one ca
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | deckId | string | Yes | Links to deck metadata |
-| lastReview | number | No | Last review date as days since 1970-01-01 (UTC); 0 = never reviewed / unknown |
+| lastReview | number | No | Last review date as days since 1970-01-01, day boundary at the device's Day cutoff offset (UTC at the default UTC+0); 0 = never reviewed / unknown |
 | cards | object | Yes | Map of cardId to progress data |
 
 **Card Progress Fields:**
@@ -104,7 +104,7 @@ Line-delimited JSON format. Each line is a valid JSON object representing one ca
 | ease | number | Yes | Ease factor (floor 1.3, typically 1.3-3.0) |
 | interval | number | Yes | Days until next review |
 | repetitions | number | Yes | Consecutive correct reviews count |
-| due | number | Yes | Next review date as days since 1970-01-01 (UTC); 0 = always due (new card or rated with no usable clock) |
+| due | number | Yes | Next review date as days since 1970-01-01, day boundary at the device's Day cutoff offset (UTC at the default UTC+0); 0 = always due (new card or rated with no usable clock). A card rated Again keeps `due` = today until it earns Hard/Good/Easy |
 
 **Migration:** older builds stored `lastReview`/`due` as `YYYY-MM-DD` strings.
 Those files still load - the string dates parse as `0` ("always due" /
@@ -115,7 +115,9 @@ due date on its next rating; ease, interval, and repetitions are preserved.
 
 The device does **not** render HTML - card strings are drawn on the e-ink
 screen exactly as they appear in `cards.jsonl`. Any markup left in a JSONL
-file shows up literally.
+file shows up literally. Embedded `\n` characters start a new line on
+screen; text is word-wrapped to the display width and paginated when it
+does not fit on one screen.
 
 Anki notes, however, are full of HTML, so the browser upload page converts
 `.apkg` field content to plain text before building the JSONL

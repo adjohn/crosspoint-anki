@@ -37,6 +37,19 @@ run_test test_timeutils \
     -I "$HERE/shim" -I "$SRC" \
     "$HERE/test_timeutils.cpp" "$SRC/utils/TimeUtils.cpp"
 
+# RelearnQueue is pure String+vector logic; the session-flow behavior of
+# ReviewActivity is covered by clearly-marked mirror tests inside.
+run_test test_relearn \
+    -I "$HERE/shim" -I "$SRC" \
+    "$HERE/test_relearn.cpp" "$SRC/scheduling/SM2.cpp"
+
+# TextWrap measures through the renderer interface only; the mock dir
+# supplies a fixed-width GfxRenderer.h so wrap points are deterministic.
+run_test test_textwrap \
+    -I "$HERE/shim" -I "$HERE/mock" -I "$SRC" \
+    -I "$REPO/firmware/lib/Utf8/include" \
+    "$HERE/test_textwrap.cpp" "$SRC/utils/TextWrap.cpp"
+
 if [ -d "$ARDUINOJSON" ]; then
     run_test test_card_json \
         -DARDUINOJSON_ENABLE_ARDUINO_STRING=1 \

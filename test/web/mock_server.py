@@ -27,6 +27,24 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
+# Mirror of WebServer.cpp applyTimezoneParam validation: 1-6 chars, optional
+# leading +/- then digits only, clamped to [-720, 840]. Returns the offset
+# the firmware would apply, or None when the field would be rejected.
+TZ_OFFSET_MIN = -720
+TZ_OFFSET_MAX = 840
+
+
+def apply_timezone_param(value):
+    if value is None or len(value) == 0 or len(value) > 6:
+        return None
+    for i, c in enumerate(value):
+        if i == 0 and c in "+-":
+            continue
+        if not ("0" <= c <= "9"):
+            return None
+    tz = 0 if value in ("+", "-") else int(value)  # String::toInt("-") == 0
+    return max(TZ_OFFSET_MIN, min(TZ_OFFSET_MAX, tz))
+
 
 class Handler(SimpleHTTPRequestHandler):
     upload_dir = None
@@ -103,6 +121,13 @@ class Handler(SimpleHTTPRequestHandler):
             params["name"] = name
         if card_count_param is not None:
             params["cardCount"] = card_count_param
+        # tzMinutes only lands in `fields` when it precedes the file part
+        # (upload.html must append it before the Blob); record the raw value
+        # and the offset applyTimezoneParam would set for assertions.
+        tz_param = fields.get("tzMinutes")
+        if tz_param is not None:
+            params["tzMinutes"] = tz_param
+            params["tzApplied"] = apply_timezone_param(tz_param)
 
         os.makedirs(self.upload_dir, exist_ok=True)
         with open(os.path.join(self.upload_dir, deck_id + ".jsonl"), "wb") as f:

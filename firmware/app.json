@@ -1,7 +1,7 @@
 {
   "id": "flashink",
   "name": "Flashink",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Spaced-repetition flashcards for CrossPoint on Xteink X3 and X4",
   "author": "adjohn",
   "minFirmware": "0.16.0"

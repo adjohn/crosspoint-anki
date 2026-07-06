@@ -2,6 +2,8 @@
 #include <GfxRenderer.h>
 #include <MappedInputManager.h>
 #include <Preferences.h>
+#include <cstdio>
+#include "../utils/TimeUtils.h"
 
 MainMenuActivity::MainMenuActivity(GfxRenderer& renderer, MappedInputManager& input)
     : Activity("MainMenu", renderer, input), selectedIndex(0), tiltItemIndex(-1) {
@@ -13,6 +15,8 @@ MainMenuActivity::MainMenuActivity(GfxRenderer& renderer, MappedInputManager& in
         tiltItemIndex = (int)menuItems.size();
         menuItems.push_back(tiltLabel());
     }
+    tzItemIndex = (int)menuItems.size();
+    menuItems.push_back(tzLabel());
     exitItemIndex = (int)menuItems.size();
     menuItems.push_back("Exit to CrossPoint");
 }
@@ -30,6 +34,32 @@ void MainMenuActivity::toggleTilt() {
     prefs.end();
 
     menuItems[tiltItemIndex] = tiltLabel();
+}
+
+// "Day cutoff: UTC+H[:MM]" — minutes shown only for non-whole-hour offsets
+// (UTC+0, UTC-3:30, UTC+5:30)
+String MainMenuActivity::tzLabel() const {
+    const int minutes = TimeUtils::timezoneOffsetMinutes();
+    const int abs = minutes < 0 ? -minutes : minutes;
+    char buf[32];
+    if (abs % 60 == 0) {
+        snprintf(buf, sizeof(buf), "Day cutoff: UTC%c%d", minutes < 0 ? '-' : '+', abs / 60);
+    } else {
+        snprintf(buf, sizeof(buf), "Day cutoff: UTC%c%d:%02d", minutes < 0 ? '-' : '+', abs / 60, abs % 60);
+    }
+    return String(buf);
+}
+
+void MainMenuActivity::adjustTimezone(int deltaMinutes) {
+    // setTimezoneOffsetMinutes clamps to [-720, 840]; no wrap-around
+    TimeUtils::setTimezoneOffsetMinutes(TimeUtils::timezoneOffsetMinutes() + deltaMinutes);
+
+    Preferences prefs;
+    prefs.begin("flashink", false);
+    prefs.putInt("tzmin", TimeUtils::timezoneOffsetMinutes());
+    prefs.end();
+
+    menuItems[tzItemIndex] = tzLabel();
 }
 
 void MainMenuActivity::onEnter() {
@@ -65,6 +95,13 @@ void MainMenuActivity::loop() {
         } else if (selectedIndex == exitItemIndex) {
             requestNav(NavTarget::ExitApp);
         }
+        // Confirm on the day-cutoff item intentionally does nothing:
+        // Left/Right are the adjustment inputs
+    } else if (selectedIndex == tzItemIndex &&
+               (input.wasPressed(MappedInputManager::Button::Left) ||
+                input.wasPressed(MappedInputManager::Button::Right))) {
+        adjustTimezone(input.wasPressed(MappedInputManager::Button::Right) ? 30 : -30);
+        needsRedraw = true;
     }
 
     if (needsRedraw) {

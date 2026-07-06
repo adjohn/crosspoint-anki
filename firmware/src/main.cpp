@@ -14,6 +14,7 @@
 #include "activities/SessionCompleteActivity.h"
 #include "activities/UploadActivity.h"
 #include "utils/BootUtils.h"
+#include "utils/TimeUtils.h"
 #include "fontIds.h"
 
 // Hardware
@@ -169,6 +170,16 @@ void setup() {
         mappedInputManager.setTiltEnabled(tiltOn);
         tiltSensor.update(tiltOn);  // Kick the wake/sleep state machine so the gyro comes up enabled
         Serial.printf("[%lu] Tilt input %s\n", millis(), tiltOn ? "enabled" : "disabled");
+    }
+
+    // Timezone offset for the local day boundary (persisted from the main
+    // menu or a deck upload); must be set before any activity computes "today"
+    {
+        Preferences prefs;
+        prefs.begin("flashink", true);
+        TimeUtils::setTimezoneOffsetMinutes(prefs.getInt("tzmin", 0));
+        prefs.end();
+        Serial.printf("[%lu] Day cutoff offset: %d minutes\n", millis(), TimeUtils::timezoneOffsetMinutes());
     }
 
     // Setup fonts

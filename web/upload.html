@@ -235,6 +235,10 @@
                 formData.append('deckId', deckId);
                 formData.append('name', deck.name);
                 formData.append('cardCount', String(deck.cards.length));
+                // Browser UTC offset in minutes east of UTC; MUST precede the
+                // file part (the firmware parses parts sequentially and never
+                // sees text fields after the file)
+                formData.append('tzMinutes', String(-new Date().getTimezoneOffset()));
                 formData.append('file', new Blob([jsonl], { type: 'application/octet-stream' }),
                                 deckId + '.jsonl');
 

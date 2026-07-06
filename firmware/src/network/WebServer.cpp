@@ -1,8 +1,41 @@
 #include "WebServer.h"
+#include <Preferences.h>
 #include <WiFi.h>
 #include <memory>
 #include "../data/DeckMetadata.h"
 #include "../storage/DeckStorage.h"
+#include "../utils/TimeUtils.h"
+
+// The upload page sends the browser's UTC offset as a tzMinutes text field
+// (before the file part — the firmware sees only fields that precede it).
+// A valid value silently updates the device's day-cutoff offset so review
+// days roll at the uploader's local midnight.
+static void applyTimezoneParam(AsyncWebServerRequest* request) {
+    if (!request->hasParam("tzMinutes", true)) {
+        return;
+    }
+    const String& value = request->getParam("tzMinutes", true)->value();
+    if (value.length() == 0 || value.length() > 6) {
+        return;
+    }
+    for (size_t i = 0; i < value.length(); i++) {
+        const char c = value[i];
+        if (i == 0 && (c == '-' || c == '+')) continue;
+        if (c < '0' || c > '9') return;
+    }
+    int tz = value.toInt();
+    if (tz < TimeUtils::TZ_OFFSET_MIN) tz = TimeUtils::TZ_OFFSET_MIN;
+    if (tz > TimeUtils::TZ_OFFSET_MAX) tz = TimeUtils::TZ_OFFSET_MAX;
+    if (tz == TimeUtils::timezoneOffsetMinutes()) {
+        return;
+    }
+    TimeUtils::setTimezoneOffsetMinutes(tz);
+    Preferences prefs;
+    prefs.begin("flashink", false);
+    prefs.putInt("tzmin", tz);
+    prefs.end();
+    Serial.println("WebServer: Day cutoff offset set to " + String(tz) + " minutes");
+}
 
 WebServer::WebServer(uint16_t port) : server(port) {}
 
@@ -298,6 +331,8 @@ void WebServer::handleUploadDeck(AsyncWebServerRequest* request, String filename
             sendJson(request, 500, "{\"error\":\"Failed to write deck metadata\"}");
             return;
         }
+
+        applyTimezoneParam(request);
 
         uploadCount = uploadCount + 1;
         Serial.println("WebServer: Upload complete for deck: " + deckId + " (" + String(uploadTotalBytes) +

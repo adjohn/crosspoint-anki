@@ -118,6 +118,27 @@ bool DeckStorage::saveProgress(const String& deckId, const DeckProgress& progres
     return SdMan.rename(tmpPath.c_str(), path.c_str());
 }
 
+bool DeckStorage::deleteDeck(const String& deckId) {
+    String deckPath = getDeckPath(deckId);
+    if (SdMan.exists(deckPath.c_str())) {
+        // removeDir deletes every file in the directory (recursively), then the directory.
+        // Keep the progress file if removal failed: the deck is still present.
+        if (!SdMan.removeDir(deckPath.c_str())) {
+            return false;
+        }
+    }
+
+    return resetProgress(deckId);
+}
+
+bool DeckStorage::resetProgress(const String& deckId) {
+    String path = getProgressPath(deckId);
+    if (!SdMan.exists(path.c_str())) {
+        return true;
+    }
+    return SdMan.remove(path.c_str());
+}
+
 String DeckStorage::getDecksDir() {
     return String(DECKS_DIR);
 }

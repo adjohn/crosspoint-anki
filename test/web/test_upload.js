@@ -77,6 +77,22 @@ function assertEqual(actual, expectedVal, msg) {
     assertEqual(params.name, expected.params.name, 'name param');
     assertEqual(params.cardCount, expected.params.cardCount, 'cardCount param');
 
+    console.log('-- verifying tzMinutes param (day-cutoff auto-set)');
+    // The mock, like the firmware, only sees text fields that PRECEDE the
+    // file part — tzMinutes being recorded at all proves the ordering.
+    assert(typeof params.tzMinutes === 'string',
+           'tzMinutes field present before the file part');
+    assert(/^[+-]?\d+$/.test(params.tzMinutes || ''),
+           'tzMinutes is a plain integer string (got: ' + params.tzMinutes + ')');
+    // Headless Chromium and this Node process share the host timezone, so
+    // the page's -getTimezoneOffset() must equal ours.
+    const hostTz = -new Date().getTimezoneOffset();
+    assertEqual(parseInt(params.tzMinutes, 10), hostTz,
+                'tzMinutes matches host UTC offset');
+    assert(hostTz >= -720 && hostTz <= 840, 'host offset within DS spec range');
+    assertEqual(params.tzApplied, Math.max(-720, Math.min(840, hostTz)),
+                'firmware-mirror validation accepts and clamps tzMinutes');
+
     console.log('-- verifying JSONL received by mock device');
     const jsonlPath = path.join(receivedDir, expected.params.deckId + '.jsonl');
     const raw = fs.readFileSync(jsonlPath, 'utf8');

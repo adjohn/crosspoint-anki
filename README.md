@@ -13,11 +13,15 @@ format but is not affiliated with or endorsed by Anki/Ankitects Pty Ltd.*
 
 - **Upload decks over WiFi** - the device hosts its own hotspot and web server (no router or internet needed); the browser page converts Anki `.apkg` exports on the fly
 - **SM-2 spaced repetition** with real due dates - each session shows only the cards due today
+- **In-session relearning** - cards rated Again come back later in the same session until you get them right, like desktop Anki
+- **Local day cutoff** - due dates roll over at your local midnight (adjustable in the main menu; set automatically from your browser when you upload a deck)
+- **Long cards page** - card text word-wraps and splits into pages you flip with the side buttons (or tilt on X3)
 - **Multi-deck support** - browse and select from multiple decks
+- **Deck management on device** - long-press Confirm on a deck to reset its progress or delete it
 - **Offline capable** - works without internet
 - **E-ink optimized** - UI designed for e-ink displays
 - **Runs on X3 and X4** - single binary, automatic device detection at boot
-- **Tilt gestures on X3** - navigate and rate cards by tilting the device
+- **Tilt gestures on X3** - navigate, rate, and page through cards by tilting the device
 - **Progress persistence** - review state saved to SD card after every rating
 - **Return to CrossPoint** - clean exit back to main launcher (menu item or long-press Back)
 
@@ -80,6 +84,7 @@ and inputs accordingly - no separate builds or configuration needed.
 | **Study** | Opens the deck list |
 | **Upload Decks** | Starts the WiFi hotspot + upload web server |
 | **Tilt: On/Off** | Toggles tilt gestures (X3 only - hidden on X4; persists across reboots) |
+| **Day cutoff: UTC+H[:MM]** | The UTC offset at which review days roll over. **Left/Right** adjust in 30-minute steps (Confirm does nothing); clamped to UTC-12:00 ... UTC+14:00, persisted to NVS. Also set automatically from the browser on every deck upload |
 | **Exit to CrossPoint** | Reboots back into the CrossPoint launcher |
 
 ### Uploading Decks
@@ -110,6 +115,9 @@ and inputs accordingly - no separate builds or configuration needed.
    - On success: `SUCCESS: DECK "<name>" UPLOADED (N CARDS)`; the deck's
      display name is the `.apkg` file name (without extension) and the deck
      ID is a slug of it (lowercased, non-alphanumerics become dashes)
+   - Each successful upload also silently sets the device's **Day cutoff**
+     to your browser's current UTC offset (only when it differs), so due
+     dates roll over at your local midnight without any on-device setup
    - On a server error (e.g. file over 10MB) the server's message is shown;
      if the request cannot reach the device at all the page shows
      "CONNECTION FAILED. CHECK YOU ARE ON THE DEVICE WIFI AND TRY AGAIN." -
@@ -124,6 +132,11 @@ and inputs accordingly - no separate builds or configuration needed.
    - `name` (optional): display name shown in the deck list (defaults to `deckId`)
    - `cardCount` (optional): overrides the card count (defaults to the number
      of JSONL lines received)
+   - `tzMinutes` (optional): sets the device's Day cutoff to this many
+     minutes east of UTC (integer, clamped to -720...840); the browser page
+     sends it automatically
+   - Text fields must come **before** the `file` field - the firmware parses
+     the multipart body sequentially and ignores fields after the file
    - Uploads are limited to 10MB; the server writes `cards.jsonl` and
      `deck-metadata.json` under `/.crosspoint/apps/flashink/decks/<deckId>/`
 6. The "Decks uploaded" counter on the device increments after each
@@ -145,25 +158,61 @@ powers down.
 2. **Review cards** - only cards due today are shown:
    - View the card front, press **Confirm** to reveal the answer
    - Press **Confirm** again to show the rating bar, then rate yourself:
-     - **Left** = **Again** - forgot completely (repetitions reset)
-     - **Down** = **Hard** - remembered with difficulty (also a lapse)
+     - **Left** = **Again** - forgot completely (repetitions reset; the card
+       repeats later in the same session)
+     - **Down** = **Hard** - remembered with difficulty (also a lapse, due
+       tomorrow)
      - **Up** = **Good** - remembered with some effort
      - **Right** = **Easy** - remembered perfectly
    - Progress is saved to the SD card after every rating
-3. **Session ends** after the last due card is rated; a summary screen shows
-   cards **Reviewed** and **Remaining** (cards still due today that were not
-   rated this session). Opening a deck with nothing due shows
+3. **Long cards page** - card text word-wraps to the screen width; when it
+   does not fit on one screen it splits into pages, with a page indicator
+   ("2/5") in the top-right corner and a hint like "Confirm: reveal |
+   Up/Down: page". **Up/Down** flip pages (no-op at the first/last page);
+   on an X3, tilt forward/back also page - see the tilt table below.
+   **Confirm** keeps its usual meaning on any page; revealing the answer
+   always starts at page 1 of the back. On the answer screen the front is
+   summarized in the top half (clipped if long - you already read it) and
+   the paging applies to the answer text below the divider.
+4. **Relearning** - after the last regularly due card, any cards you rated
+   **Again** come back for another round (the header switches from
+   "Review: <deck>" to "Relearning"). Each card repeats until you rate it
+   Hard, Good, or Easy. If you exit mid-session, Again-rated cards stay due
+   today and reappear next session.
+5. **Session ends** when every due card has been rated and the relearning
+   queue is empty; a summary screen shows cards **Reviewed** (unique cards,
+   however often one repeated) and **Remaining** (cards still due today that
+   were not rated this session). Opening a deck with nothing due shows
    "No cards due today".
-4. Press **Confirm** or **Back** on the summary to return to the deck list.
+6. Press **Confirm** or **Back** on the summary to return to the deck list.
    **Back** during a review also returns to the deck list (progress is kept).
+
+#### Managing decks
+
+Long-press **Confirm** (hold ~0.8s) on a deck in the deck list to open a
+deck options box:
+
+- **Reset progress** - deletes the deck's progress file immediately (no
+  second confirmation); every card becomes due again as if freshly uploaded
+- **Delete deck** - asks for a second **Confirm** on a confirmation box
+  naming the deck; any other button cancels. Deletes the deck's files and
+  its progress from the SD card
+- **Cancel** (or **Back**) - closes the box with no action
+
+In the options box **Up/Down** move the highlight, **Confirm** selects,
+**Back** cancels; tilt gestures are ignored while it is open. A short press
+of Confirm still opens the deck for review - it triggers on release, so
+opening feels the same as before unless you keep holding. If a reset or
+delete fails (SD error), a "Reset progress failed" / "Delete failed" message
+appears at the bottom of the list until the next interaction.
 
 #### Scheduling (SM-2)
 
 Each rating updates the card's ease factor, repetition count, interval, and
 due date:
 
-- **Again** or **Hard** is a lapse: repetitions reset to 0 and the card comes
-  back in **1 day**
+- **Again** or **Hard** is a lapse: repetitions reset to 0 and the interval
+  drops to **1 day**
 - The first successful review (**Good**/**Easy**) schedules the card in
   **1 day**, the second in **6 days**; after that the previous interval is
   multiplied by the ease factor - a card rated Good every time runs
@@ -171,14 +220,29 @@ due date:
 - **Easy** raises the ease factor; **Good** lowers it slightly, **Hard** and
   **Again** lower it more (floor 1.3)
 
-The due date is `today + interval`. Sessions skip cards that are not yet due.
-A card rated **Again** is due tomorrow, so unlike desktop Anki it does not
-repeat within the same session.
+The due date is `today + interval`, except that **Again** keeps the card due
+**today**: it re-enters the current session's relearning queue (and is still
+due if you exit before re-rating it). Rating it Good/Easy during relearning
+then schedules it normally (1 day for the first success after a lapse).
+**Hard** schedules the card for tomorrow and does not repeat in-session.
+Sessions skip cards that are not yet due. Note that every rating adjusts the
+ease factor, including repeat Again ratings within one session - repeated
+in-session lapses lower ease more than a single desktop-Anki lapse would.
+
+**Day boundary** - a review "day" rolls over at the **Day cutoff** offset
+(main menu), applied to the UTC clock: with the default UTC+0 days change at
+UTC midnight; set it to your timezone and they change at your local
+midnight. The offset is adjusted with Left/Right on the menu item (30-minute
+steps, so half-hour zones like UTC+5:30 work) and is also set automatically
+from the browser's timezone on every deck upload. Changing the offset
+takes effect immediately and can shift which cards count as due today.
 
 **Clock reality** - due dates need a real calendar date:
 
-- **X3**: the app reads the date from the battery-backed DS3231 RTC whenever
-  the system clock is unset, so scheduling keeps working across power-off.
+- **X3**: the app reads the date and time from the battery-backed DS3231 RTC
+  (treated as UTC, like the system clock, with the Day cutoff applied on
+  top) whenever the system clock is unset, so scheduling keeps working
+  across power-off.
 - **X4**: there is no RTC. The app relies on the ESP32 system clock, which
   CrossPoint typically sets via NTP (when it has WiFi) before launching the
   app. That clock survives a restart but **not** power-off/deep sleep or a
@@ -188,17 +252,15 @@ repeat within the same session.
   "due immediately" marker instead of a date. Scheduling resumes from the
   next rating made with a valid clock.
 
-Day boundaries are UTC, not local midnight, so a card rated late in the
-evening may come due slightly earlier or later than local-midnight Anki
-would schedule it.
-
 ### Controls
 
 | Button | Action |
 |--------|--------|
-| **Up/Down** (side buttons) | Move selection in menus and the deck list |
-| **Confirm** | Select menu item / reveal answer / show rating bar |
-| **Back** | Go back one screen (deck list → main menu, review → deck list) |
+| **Up/Down** (side buttons) | Move selection in menus and the deck list; previous/next page on multi-page cards |
+| **Confirm** | Select menu item / open deck / reveal answer / show rating bar |
+| **Long-press Confirm** (≥0.8s, deck list) | Open the deck options box (reset progress / delete deck) |
+| **Back** | Go back one screen (deck list → main menu, review → deck list); cancels the deck options box |
+| **Left/Right** | Adjust the Day cutoff (main menu, on that item only) |
 | **Left / Down / Up / Right** | Rate Again / Hard / Good / Easy (rating bar shown) |
 | **Long-press Back** (≥1.2s) | Exit to CrossPoint - works from any screen |
 | **Long-press Power** (≥1s) | Deep sleep ("Sleeping..." screen) |
@@ -218,9 +280,13 @@ across reboots; default is on). The menu item only appears on an X3.
 | Screen | Tilt forward | Tilt back |
 |--------|--------------|-----------|
 | Main menu / deck list | Selection down | Selection up |
-| Review - question shown | Reveal answer | (ignored) |
-| Review - answer/rating shown | Rate **Good** | Rate **Again** |
-| Session complete / upload screen | (ignored) | (ignored) |
+| Review - question shown | Next page; on the last page, reveal answer | Previous page (page 1: ignored) |
+| Review - answer shown | Next page; on the last page, rate **Good** | Previous page; on page 1, rate **Again** |
+| Review - rating bar shown | Rate **Good** | Rate **Again** |
+| Session complete / upload / deck options box | (ignored) | (ignored) |
+
+On single-page cards "next page on the last page" collapses to the classic
+behavior: forward reveals/rates Good, back rates Again.
 
 Tilt gestures also count as activity for the auto-sleep timer. Buttons always
 work regardless of the tilt setting.
@@ -254,9 +320,10 @@ Progress is stored separately at `progress/<deckId>.json`:
 }
 ```
 
-`due` and `lastReview` are days since 1970-01-01 (UTC epoch days). A `due`
-of `0` means "always due" - used for cards rated while no usable clock was
-available. Progress files written by older builds (which stored these fields
+`due` and `lastReview` are days since 1970-01-01, counted with the day
+boundary at the configured Day cutoff offset (plain UTC epoch days at the
+default UTC+0). A `due` of `0` means "always due" - used for cards rated
+while no usable clock was available. Progress files written by older builds (which stored these fields
 as strings) still load: the dates migrate to `0`, so each previously tracked
 card is due once more and gets a real due date on its next rating (its ease,
 interval, and repetitions are preserved).
@@ -284,13 +351,16 @@ interval, and repetitions are preserved).
 - **Streaming**: Cards loaded one at a time (no RAM exhaustion); deck uploads stream straight to SD
 
 ### Supported Card Content
-- Plain text (card front/back strings are rendered as-is)
+- Plain text (card front/back strings)
+- Card text is word-wrapped to the screen width (UTF-8 aware; embedded line
+  breaks respected; words wider than the screen split at glyph boundaries)
+  and paginated when it does not fit on one screen - see
+  [Studying](#studying)
 - The browser upload page converts `.apkg` cards to plain text: HTML is
   stripped (`<br>` and block tags become line breaks), entities are decoded,
   and `[sound:...]` references are removed
 
-*Note: images, audio, cloze rendering, and long-text wrapping are not
-supported - very long card text may clip at the screen edge, and non-Latin
+*Note: images, audio, and cloze rendering are not supported; non-Latin
 glyphs upload intact but may not be covered by the device fonts*
 
 ## Building from Source
@@ -312,14 +382,17 @@ The compiled binary will be at `.pio/build/default/firmware.bin`
 ### Automated Tests
 
 - `bash test/native/run.sh` - host-compiled unit tests exercising the real
-  SM-2 scheduler, the DS3231/epoch-day date decoding, and the card/progress
-  JSON (de)serialization + migration (currently 191 checks across 3 targets;
+  SM-2 scheduler, the timezone/day-cutoff math and DS3231 time+date
+  register decoding, the relearning queue, the text
+  wrapper (against a mock renderer), and the card/progress JSON
+  (de)serialization + migration (currently 358 checks across 5 targets;
   needs `g++` and the ArduinoJson dependency fetched by a prior `pio run`)
 - `bash test/web/run.sh` - end-to-end browser upload test: builds a real
   `.apkg` fixture, drives `web/upload.html` in headless Chromium against a
   mock server implementing the firmware's `/upload-deck` contract, and
-  asserts the UI states and the exact JSONL bytes received (currently 39
-  checks; needs `python3`, `node`, and Playwright with Chromium)
+  asserts the UI states, the exact JSONL bytes received, and the `tzMinutes`
+  timezone field (currently 44 checks; needs `python3`, `node`, and
+  Playwright with Chromium)
 
 ### Project Structure
 ```
@@ -328,9 +401,9 @@ firmware/
 │   ├── activities/     # UI screens (MainMenu, DeckList, Review, etc.)
 │   ├── data/           # Card, Deck, Progress structures
 │   ├── network/        # Web server for uploads
-│   ├── scheduling/     # SM-2 algorithm
+│   ├── scheduling/     # SM-2 algorithm + relearning queue
 │   ├── storage/        # SD card I/O
-│   └── utils/          # Boot + time/RTC utilities
+│   └── utils/          # Boot, time/RTC + day cutoff, text wrapping
 ├── lib/                # GfxRenderer, fonts, etc.
 └── open-x4-sdk/        # SDK submodule
 ```
@@ -346,6 +419,11 @@ firmware/
 - Not a bug: every card in that deck is scheduled for a future date. Come
   back when cards come due, or check `progress/<deckId>.json` for the `due`
   values (days since 1970-01-01)
+
+### Cards come due at the wrong time of day
+- Check the **Day cutoff** item in the main menu: due dates roll over at
+  that UTC offset. It is set automatically from your browser's timezone on
+  every deck upload, or adjust it with Left/Right on the menu item
 
 ### Cards you already reviewed keep coming back (X4)
 - The X4 has no RTC, so due dates only work while the system clock is set
