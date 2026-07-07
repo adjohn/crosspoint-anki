@@ -5,8 +5,8 @@
 #include <SDCardManager.h>
 
 // Static files directory on SD card
-#define WEB_ROOT "/.crosspoint/apps/anki/web"
-#define UPLOAD_TEMP_DIR "/.crosspoint/apps/anki/temp"
+#define WEB_ROOT "/.crosspoint/apps/flashink/web"
+#define UPLOAD_TEMP_DIR "/.crosspoint/apps/flashink/temp"
 
 // Upload limits
 #define MAX_UPLOAD_SIZE (10 * 1024 * 1024)  // 10MB
@@ -25,12 +25,34 @@ public:
     // Check if server is running
     bool isRunning() const { return running; }
 
+    // Number of decks successfully uploaded since construction.
+    // Incremented from the async upload callback; volatile is enough for a
+    // single 32-bit counter polled from the main loop.
+    uint32_t uploadedCount() const { return uploadCount; }
+
 private:
     AsyncWebServer server;
     bool running = false;
-    
+    bool routesConfigured = false;
+    volatile uint32_t uploadCount = 0;
+
+    // Per-upload state; uploads are serialized, activeUpload owns this state
+    // and concurrent uploads are rejected with 409.
+    AsyncWebServerRequest* activeUpload = nullptr;
+    FsFile uploadFile;
+    size_t uploadTotalBytes = 0;
+    size_t uploadLineCount = 0;
+    uint8_t uploadLastByte = '\n';
+    String uploadTempPath;
+    bool uploadHasError = false;
+
     // Setup routes
     void setupRoutes();
+
+    // Send a JSON response and mark the request as answered (via _tempObject,
+    // freed by the request destructor) so the POST handler can detect uploads
+    // that never produced a response (e.g. zero-byte file parts).
+    static void sendJson(AsyncWebServerRequest* request, int code, const String& body);
     
     // Static file handler - serves files from SD card
     void handleStaticFile(AsyncWebServerRequest* request);

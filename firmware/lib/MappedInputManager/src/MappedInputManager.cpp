@@ -1,5 +1,7 @@
 #include "MappedInputManager.h"
 
+#include <HalTiltSensor.h>
+
 #include "CrossPointSettings.h"
 
 namespace {
@@ -88,6 +90,33 @@ MappedInputManager::Labels MappedInputManager::mapLabels(const char* back, const
 
   return {labelForHardware(HalGPIO::BTN_BACK), labelForHardware(HalGPIO::BTN_CONFIRM),
           labelForHardware(HalGPIO::BTN_LEFT), labelForHardware(HalGPIO::BTN_RIGHT)};
+}
+
+void MappedInputManager::setTiltSensor(HalTiltSensor* sensor) { tiltSensor = sensor; }
+
+bool MappedInputManager::tiltAvailable() const { return tiltSensor != nullptr && tiltSensor->isAvailable(); }
+
+void MappedInputManager::setTiltEnabled(const bool enabled) {
+  tiltEnabled = enabled;
+  if (!enabled && tiltSensor != nullptr) {
+    tiltSensor->clearPendingEvents();
+  }
+}
+
+bool MappedInputManager::isTiltEnabled() const { return tiltEnabled; }
+
+bool MappedInputManager::wasTiltedForward() const {
+  return tiltEnabled && tiltAvailable() && tiltSensor->wasTiltedForward();
+}
+
+bool MappedInputManager::wasTiltedBack() const {
+  return tiltEnabled && tiltAvailable() && tiltSensor->wasTiltedBack();
+}
+
+void MappedInputManager::clearTiltEvents() const {
+  if (tiltSensor != nullptr) {
+    tiltSensor->clearPendingEvents();
+  }
 }
 
 int MappedInputManager::getPressedFrontButton() const {

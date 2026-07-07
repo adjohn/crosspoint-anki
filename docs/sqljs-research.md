@@ -1,5 +1,14 @@
 # sql.js Offline Bundle Research
 
+> **Correction (2026-07):** the originally vendored `sql-wasm.js` (39 KB, see
+> below) was truncated/corrupted - the "Unexpected token '{'" console error
+> noted in this document was a genuine SyntaxError, and `initSqlJs` was never
+> defined, so the upload page could not parse decks. It has been replaced
+> with the pristine loader from the **sql.js 1.13.0** npm dist (48,788
+> bytes), whose companion `sql-wasm.wasm` is byte-identical to the one
+> already in `web/lib/`. The end-to-end suite `test/web/run.sh` now guards
+> against this regressing. Historical findings below are kept as written.
+
 ## Overview
 Research completed on 2025-02-08: Successfully downloaded and bundled sql.js and JSZip libraries for local/offline use in ESP32 AP mode.
 

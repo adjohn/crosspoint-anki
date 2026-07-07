@@ -16,9 +16,10 @@ struct Card {
         DeserializationError error = deserializeJson(doc, jsonLine);
         
         if (!error) {
-            card.id = doc["id"].as<String>();
-            card.front = doc["front"].as<String>();
-            card.back = doc["back"].as<String>();
+            // `| ""` so absent keys parse to empty, not the text "null"
+            card.id = doc["id"] | "";
+            card.front = doc["front"] | "";
+            card.back = doc["back"] | "";
             
             JsonArray tagsArray = doc["tags"];
             for (JsonVariant tag : tagsArray) {

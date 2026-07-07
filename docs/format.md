@@ -53,15 +53,16 @@ Line-delimited JSON format. Each line is a valid JSON object representing one ca
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | id | string | Yes | Unique card identifier within deck |
-| front | string | Yes | HTML content for card front |
-| back | string | Yes | HTML content for card back |
+| front | string | Yes | Plain-text content for card front |
+| back | string | Yes | Plain-text content for card back |
 | tags | array | No | Array of string tags for categorization |
 
 **Notes:**
 - Each line must be valid JSON
 - No trailing commas
 - UTF-8 encoding
-- Front/back content supports basic HTML (see HTML Support section)
+- Front/back content is plain text - the device renders the strings verbatim
+  (see HTML Handling section)
 
 ## Progress Format
 
@@ -70,19 +71,19 @@ Line-delimited JSON format. Each line is a valid JSON object representing one ca
 ```json
 {
   "deckId": "spanish-101",
-  "lastReview": "2026-02-08",
+  "lastReview": 20492,
   "cards": {
     "1": {
-      "ease": 2.5,
+      "ease": 2.36,
       "interval": 6,
-      "repetitions": 3,
-      "due": "2026-02-14"
+      "repetitions": 2,
+      "due": 20498
     },
     "2": {
-      "ease": 2.3,
+      "ease": 1.7,
       "interval": 1,
       "repetitions": 0,
-      "due": "2026-02-09"
+      "due": 20493
     }
   }
 }
@@ -93,65 +94,48 @@ Line-delimited JSON format. Each line is a valid JSON object representing one ca
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | deckId | string | Yes | Links to deck metadata |
-| lastReview | string | No | Last review session date (YYYY-MM-DD) |
+| lastReview | number | No | Last review date as days since 1970-01-01, day boundary at the device's Day cutoff offset (UTC at the default UTC+0); 0 = never reviewed / unknown |
 | cards | object | Yes | Map of cardId to progress data |
 
 **Card Progress Fields:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| ease | number | Yes | Ease factor (1.3 to ∞, typically 1.3-3.0) |
+| ease | number | Yes | Ease factor (floor 1.3, typically 1.3-3.0) |
 | interval | number | Yes | Days until next review |
 | repetitions | number | Yes | Consecutive correct reviews count |
-| due | string | Yes | Next review date (YYYY-MM-DD) |
+| due | number | Yes | Next review date as days since 1970-01-01, day boundary at the device's Day cutoff offset (UTC at the default UTC+0); 0 = always due (new card or rated with no usable clock). A card rated Again keeps `due` = today until it earns Hard/Good/Easy |
 
-## HTML Support
+**Migration:** older builds stored `lastReview`/`due` as `YYYY-MM-DD` strings.
+Those files still load - the string dates parse as `0` ("always due" /
+"never"), so each tracked card is offered once more and receives a numeric
+due date on its next rating; ease, interval, and repetitions are preserved.
 
-Card content (front and back) supports a limited subset of HTML:
+## HTML Handling
 
-### Allowed Tags
+The device does **not** render HTML - card strings are drawn on the e-ink
+screen exactly as they appear in `cards.jsonl`. Any markup left in a JSONL
+file shows up literally. Embedded `\n` characters start a new line on
+screen; text is word-wrapped to the display width and paginated when it
+does not fit on one screen.
 
-| Tag | Purpose |
-|-----|---------|
-| `<b>` or `<strong>` | Bold text |
-| `<i>` or `<em>` | Italic text |
-| `<br>` | Line break |
-| `<p>` | Paragraph |
-| `<div>` | Division/block |
-| `<ul>` | Unordered list |
-| `<li>` | List item |
+Anki notes, however, are full of HTML, so the browser upload page converts
+`.apkg` field content to plain text before building the JSONL
+(`web/js/apkg-parser.js`, `stripHtml`):
 
-### Examples
+- `[sound:...]` references are removed
+- `<br>` and closing block tags (`</div>`, `</p>`, `</li>`, `</ul>`,
+  `</ol>`, `</tr>`, `</table>`, `</h1>`-`</h6>`, `</blockquote>`) become
+  newlines
+- All remaining tags are stripped (their text content is preserved)
+- Named entities (`&nbsp;` `&lt;` `&gt;` `&quot;` `&amp;`) and numeric
+  entities (`&#123;` / `&#x1F431;`) are decoded
+- Whitespace is normalized (runs of spaces collapse, at most one blank line)
 
-**Bold text:**
-```html
-<b>Important</b> word
-```
+Example conversion: `<div>What is <b>2 + 2</b>?</div>` uploads as
+`What is 2 + 2?`.
 
-**Italic text:**
-```html
-<i>emphasis</i>
-```
-
-**Line breaks:**
-```html
-Line one<br>Line two
-```
-
-**Lists:**
-```html
-<ul>
-  <li>Item one</li>
-  <li>Item two</li>
-</ul>
-```
-
-### Ignored Content
-
-- HTML attributes (e.g., `style="color: red"`) are stripped
-- Unsupported tags are stripped (content preserved)
-- CSS classes are ignored
-- JavaScript is not executed
+If you generate JSONL yourself (curl upload), supply plain text.
 
 ## Size Limits
 
@@ -185,34 +169,34 @@ This limit prevents:
 
 **cards.jsonl:**
 ```jsonl
-{"id": "1", "front": "<b>Hello</b>", "back": "<b>Hola</b>", "tags": ["greetings"]}
+{"id": "1", "front": "Hello", "back": "Hola", "tags": ["greetings"]}
 {"id": "2", "front": "Goodbye", "back": "Adiós", "tags": ["greetings"]}
-{"id": "3", "front": "Thank you<br><i>very much</i>", "back": "Gracias", "tags": ["courtesy"]}
+{"id": "3", "front": "Thank you\nvery much", "back": "Gracias", "tags": ["courtesy"]}
 ```
 
 **progress.json (after some reviews):**
 ```json
 {
   "deckId": "spanish-basics",
-  "lastReview": "2026-02-08",
+  "lastReview": 20492,
   "cards": {
     "1": {
-      "ease": 2.5,
+      "ease": 2.36,
       "interval": 6,
-      "repetitions": 3,
-      "due": "2026-02-14"
+      "repetitions": 2,
+      "due": 20498
     },
     "2": {
-      "ease": 2.5,
+      "ease": 2.36,
       "interval": 1,
       "repetitions": 1,
-      "due": "2026-02-09"
+      "due": 20493
     },
     "3": {
-      "ease": 1.8,
-      "interval": 0,
+      "ease": 1.7,
+      "interval": 1,
       "repetitions": 0,
-      "due": "2026-02-08"
+      "due": 20493
     }
   }
 }

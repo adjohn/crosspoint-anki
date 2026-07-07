@@ -5,7 +5,13 @@ HalDisplay::HalDisplay() : einkDisplay(EPD_SCLK, EPD_MOSI, EPD_CS, EPD_DC, EPD_R
 
 HalDisplay::~HalDisplay() {}
 
-void HalDisplay::begin() { einkDisplay.begin(); }
+void HalDisplay::begin(const bool isX3) {
+  x3 = isX3;
+  if (isX3) {
+    einkDisplay.setDisplayX3();
+  }
+  einkDisplay.begin();
+}
 
 void HalDisplay::clearScreen(uint8_t color) const { einkDisplay.clearScreen(color); }
 
@@ -27,10 +33,17 @@ EInkDisplay::RefreshMode convertRefreshMode(HalDisplay::RefreshMode mode) {
 }
 
 void HalDisplay::displayBuffer(HalDisplay::RefreshMode mode, bool turnOffScreen) {
+  // X3 panels ghost badly on HALF_REFRESH; force a one-shot resync first
+  if (x3 && mode == HALF_REFRESH) {
+    einkDisplay.requestResync(1);
+  }
   einkDisplay.displayBuffer(convertRefreshMode(mode), turnOffScreen);
 }
 
 void HalDisplay::refreshDisplay(HalDisplay::RefreshMode mode, bool turnOffScreen) {
+  if (x3 && mode == HALF_REFRESH) {
+    einkDisplay.requestResync(1);
+  }
   einkDisplay.refreshDisplay(convertRefreshMode(mode), turnOffScreen);
 }
 

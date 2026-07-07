@@ -24,6 +24,12 @@ public:
     static bool openCardStream(const String& deckId, CardStream& stream);
     static DeckProgress loadProgress(const String& deckId);
     static bool saveProgress(const String& deckId, const DeckProgress& progress);
+    // Removes the deck directory (cards.jsonl, deck-metadata.json, anything
+    // else inside) and the progress file. Returns false if anything remains.
+    static bool deleteDeck(const String& deckId);
+    // Removes the progress file only; missing file counts as success.
+    static bool resetProgress(const String& deckId);
+    static String getDecksDir();
     static String getDeckPath(const String& deckId);
     static String getProgressPath(const String& deckId);
 };

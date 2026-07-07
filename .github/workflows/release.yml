@@ -44,12 +44,12 @@ jobs:
           cp -r web release/web
           # Create the release ZIP
           cd release
-          zip -r ../anki-${{ github.ref_name }}.zip app.bin app.json web/
+          zip -r ../flashink-${{ github.ref_name }}.zip app.bin app.json web/
       
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: anki-app
+          name: flashink-app
           path: |
             release/app.bin
             release/app.json
@@ -60,7 +60,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            anki-${{ github.ref_name }}.zip
+            flashink-${{ github.ref_name }}.zip
             release/app.bin
             release/app.json
           generate_release_notes: true
